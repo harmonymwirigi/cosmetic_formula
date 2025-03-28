@@ -1,0 +1,71 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+.env
+
+# Database
+*.db
+*.sqlite3
+*.sqlite
+cosmetic_formula_lab.db
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+logs/
+*.log
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.production
+
+# Stripe
+.stripe/
+
+# Alembic migration data
+# Uncomment if you want to include migrations
+# alembic/versions/
+
+# Miscellaneous
+tmp/
+.tmp/
+.cache/
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+
+# Documentation
+docs/_build/
+docs/auto_examples/
+docs/generated/
+docs/modules/
+
+# OS-specific
+.DS_Store
+Thumbs.db
