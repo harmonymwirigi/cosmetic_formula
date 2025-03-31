@@ -52,7 +52,7 @@ origins = [
     "http://127.0.0.1:5173",
     "http://127.0.0.1:3000",
     "http://192.168.1.1:5173",
-    "https://5348-102-219-208-254.ngrok-free.app",
+    "https://cosmetic-formula-frontend.vercel.app",
     settings.FRONTEND_URL,
 ]
 
@@ -155,3 +155,6 @@ async def test_token(current_user: models.User = Depends(get_current_user)):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+
+
+app = app
