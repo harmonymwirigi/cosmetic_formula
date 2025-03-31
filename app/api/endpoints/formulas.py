@@ -9,30 +9,34 @@ from app.auth import get_current_user
 
 router = APIRouter()
 
-@router.get("/recent", response_model=dict)
+@router.get("/recent", response_model=List[schemas.FormulaList])
 def get_recent_formulas(
     limit: int = Query(5, ge=1, le=20),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
     """
-    Get the user's most recently created formulas.
-    Returns both the formulas and a total count.
+    Get user's recent formulas
     """
-    # Get total count of user's formulas
-    total_count = db.query(models.Formula).filter(models.Formula.user_id == current_user.id).count()
-    
-    # Get recent formulas, ordered by creation date
-    recent_formulas = db.query(models.Formula)\
-        .filter(models.Formula.user_id == current_user.id)\
-        .order_by(models.Formula.created_at.desc())\
-        .limit(limit)\
-        .all()
-    
-    return {
-        "total_count": total_count,
-        "formulas": recent_formulas
-    }
+    try:
+        # Get user's formulas, ordered by creation date
+        formulas = (
+            db.query(models.Formula)
+            .filter(models.Formula.user_id == current_user.id)
+            .order_by(models.Formula.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        
+        # Return will be automatically converted to the response_model type
+        return formulas
+    except Exception as e:
+        # Add better error logging
+        print(f"Error fetching recent formulas: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error fetching recent formulas"
+        )
 @router.post("/duplicate/{formula_id}", response_model=schemas.Formula)
 def duplicate_formula(
     formula_id: int,

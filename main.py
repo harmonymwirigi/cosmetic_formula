@@ -117,9 +117,12 @@ except ImportError:
 
 try:
     from app.api.endpoints import ai_formula
+    print("Successfully imported AI formula router")
+    print(f"Router routes: {[route for route in ai_formula.router.routes]}")
     app.include_router(ai_formula.router, prefix="/api/ai-formula", tags=["ai-formula"])
-except ImportError:
-    print("Warning: AI Formula endpoints not found, skipping...")
+    print("Successfully registered AI formula router")
+except ImportError as e:
+    print(f"Warning: AI Formula endpoints not found, error: {e}")
 
 # Include payment endpoints
 try:
