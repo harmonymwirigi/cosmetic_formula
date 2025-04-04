@@ -45,7 +45,7 @@ async def login_via_google(request: Request, response: Response):
     # Store the requested URL in session for later redirect
     redirect_uri = request.query_params.get(
         "redirect_uri", 
-        "http://localhost:5173/oauth/callback"  # Default for local development
+        f"{settings.FRONTEND_URL}/oauth/callback"  # Use settings variable instead of hardcoded URL
     )
     request.session["redirect_uri"] = redirect_uri
     
@@ -199,5 +199,3 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
         error_msg = str(e)
         print(f"OAuth error: {error_msg}")  # Add debug logging
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={error_msg}")
-    
-
