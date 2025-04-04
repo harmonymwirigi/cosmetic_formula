@@ -32,7 +32,6 @@ async def startup_event():
     stripe.api_key = settings.STRIPE_SECRET_KEY
     print(f"Stripe initialized with API key ending in ...{settings.STRIPE_SECRET_KEY[-4:]}")
 
-# backend/app/api/endpoints/payments.py
 
 @router.post("/create-checkout-session")
 async def create_checkout_session_endpoint(
@@ -269,3 +268,151 @@ async def stripe_webhook(
         # Log error but return success to acknowledge receipt (Stripe will retry otherwise)
         print(f"Error processing webhook: {str(e)}")
         return {"status": "error", "message": str(e)}
+    
+
+
+# backend/app/api/endpoints/payments.py (New)
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from typing import Dict, Any
+from app import models, schemas
+from app.database import get_db
+from app.auth import get_current_user
+from datetime import datetime, timedelta
+
+router = APIRouter()
+
+@router.post("/create-subscription", response_model=Dict[str, Any])
+async def create_subscription(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Create a new subscription or update an existing one.
+    In a real implementation, this would connect to a payment provider like Stripe.
+    For this demo, we're simulating the process.
+    """
+    try:
+        plan = data.get("plan")
+        billing_cycle = data.get("billing_cycle", "monthly")
+        
+        if not plan or plan not in ["premium", "professional"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid subscription plan"
+            )
+        
+        # In a real implementation, this would redirect to a payment provider
+        # For demo purposes, we'll simulate a successful subscription
+
+        # Generate a fake checkout URL (in a real implementation, this would come from the payment provider)
+        checkout_url = f"/subscription/confirm?plan={plan}&billing_cycle={billing_cycle}"
+        
+        # Return the checkout URL
+        return {
+            "success": True,
+            "checkout_url": checkout_url,
+            "message": "Redirecting to payment provider..."
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error creating subscription: {str(e)}"
+        )
+        
+@router.post("/confirm-subscription", response_model=Dict[str, Any])
+async def confirm_subscription(
+    data: dict,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Confirm a subscription after payment has been processed.
+    This would typically be called by a webhook from the payment provider,
+    but for demo purposes, we'll simulate it being called directly.
+    """
+    try:
+        plan = data.get("plan")
+        billing_cycle = data.get("billing_cycle", "monthly")
+        
+        if not plan or plan not in ["premium", "professional"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid subscription plan"
+            )
+        
+        # Update user's subscription
+        subscription_type = models.SubscriptionType.PREMIUM if plan == "premium" else models.SubscriptionType.PROFESSIONAL
+        
+        # Calculate expiration date based on billing cycle
+        if billing_cycle == "annual":
+            expires_at = datetime.now() + timedelta(days=365)
+        else:
+            expires_at = datetime.now() + timedelta(days=30)
+        
+        # Update user record
+        current_user.subscription_type = subscription_type
+        current_user.subscription_expires_at = expires_at
+        current_user.subscription_id = f"{plan}-{current_user.id}-{datetime.now().timestamp()}"
+        
+        db.commit()
+        db.refresh(current_user)
+        
+        return {
+            "success": True,
+            "subscription": {
+                "plan": plan,
+                "billing_cycle": billing_cycle,
+                "expires_at": expires_at.isoformat(),
+                "subscription_id": current_user.subscription_id
+            },
+            "message": "Subscription confirmed successfully"
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error confirming subscription: {str(e)}"
+        )
+
+@router.post("/cancel-subscription", response_model=Dict[str, Any])
+async def cancel_subscription(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Cancel a subscription.
+    In a real implementation, this would connect to a payment provider like Stripe.
+    For this demo, we're simulating the process.
+    """
+    try:
+        # Check if user has an active subscription
+        if current_user.subscription_type == models.SubscriptionType.FREE:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No active subscription to cancel"
+            )
+        
+        # In a real implementation, this would cancel the subscription with the payment provider
+        # For demo purposes, we'll simulate immediate cancellation
+        
+        # Update user record
+        current_user.subscription_type = models.SubscriptionType.FREE
+        current_user.subscription_expires_at = None
+        current_user.subscription_id = None
+        
+        db.commit()
+        db.refresh(current_user)
+        
+        return {
+            "success": True,
+            "message": "Subscription cancelled successfully"
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error cancelling subscription: {str(e)}"
+        )

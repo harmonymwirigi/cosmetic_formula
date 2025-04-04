@@ -189,6 +189,8 @@ def update_formula_steps(
     
     # Return formatted formula response
     return utils.response_formatter.format_formula_response(formula, db)
+
+
 @router.get("/read_formulas", response_model=List[schemas.FormulaList])
 def read_formulas(
     skip: int = 0,

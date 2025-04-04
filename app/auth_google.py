@@ -43,7 +43,10 @@ async def login_via_google(request: Request, response: Response):
     Initiate Google OAuth login flow
     """
     # Store the requested URL in session for later redirect
-    redirect_uri = request.query_params.get("redirect_uri", "/dashboard")
+    redirect_uri = request.query_params.get(
+        "redirect_uri", 
+        "http://localhost:5173/oauth/callback"  # Default for local development
+    )
     request.session["redirect_uri"] = redirect_uri
     
     # For development: disable state verification
@@ -64,13 +67,24 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     try:
         print("Google OAuth callback received")
         
-        # DEVELOPMENT ONLY: Skip state verification
-        # In production, you should always verify state
         
-        # Get token without state verification (DEVELOPMENT ONLY)
         try:
             # First try normal flow
             token = await oauth.google.authorize_access_token(request)
+            frontend_callback = request.session.get("redirect_uri", f"{settings.FRONTEND_URL}/oauth/callback")
+        
+            # Create access token
+            access_token = create_access_token(data={"sub": str(user.id)})
+            from urllib.parse import urlparse, urlunparse
+            parsed_uri = urlparse(frontend_callback)
+            base_url = urlunparse((parsed_uri.scheme, parsed_uri.netloc, "", "", "", ""))
+            
+            # Construct the final redirect URL with the token
+            redirect_url = f"{base_url}/oauth/callback?token={access_token}&user_id={user.id}"
+            
+            print(f"Redirecting to: {redirect_url}")
+            
+            return RedirectResponse(url=redirect_url)
         except Exception as e:
             if "mismatching_state" in str(e):
                 print("State mismatch detected, bypassing for development")
