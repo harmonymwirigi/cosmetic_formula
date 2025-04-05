@@ -17,7 +17,7 @@ class Settings:
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
     
     # Frontend URL for redirects (IMPORTANT for OAuth)
-    FRONTEND_URL: str = "http://localhost:5173"
+    FRONTEND_URL: str = "https://cosmetic-formula-frontend.vercel.app"
     
     # CORS origins
     CORS_ORIGINS: list = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173").split(",")
