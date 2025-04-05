@@ -58,7 +58,6 @@ async def login_via_google(request: Request, response: Response):
         request, 
         GOOGLE_REDIRECT_URI
     )
-
 @oauth_router.get("/google/callback")
 async def auth_callback(request: Request, db: Session = Depends(get_db)):
     """
@@ -66,25 +65,15 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
     """
     try:
         print("Google OAuth callback received")
-        
+        token = None
+        user_info = None
+        frontend_callback = None
         
         try:
             # First try normal flow
             token = await oauth.google.authorize_access_token(request)
             frontend_callback = request.session.get("redirect_uri", f"{settings.FRONTEND_URL}/oauth/callback")
-        
-            # Create access token
-            access_token = create_access_token(data={"sub": str(user.id)})
-            from urllib.parse import urlparse, urlunparse
-            parsed_uri = urlparse(frontend_callback)
-            base_url = urlunparse((parsed_uri.scheme, parsed_uri.netloc, "", "", "", ""))
-            
-            # Construct the final redirect URL with the token
-            redirect_url = f"{base_url}/oauth/callback?token={access_token}&user_id={user.id}"
-            
-            print(f"Redirecting to: {redirect_url}")
-            
-            return RedirectResponse(url=redirect_url)
+            # Note: We don't extract user_info here yet
         except Exception as e:
             if "mismatching_state" in str(e):
                 print("State mismatch detected, bypassing for development")
@@ -94,8 +83,6 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
                     raise HTTPException(status_code=400, detail="Authorization code not found")
                 
                 # Manually create token (SIMPLIFIED FOR DEVELOPMENT ONLY)
-                # This is NOT secure and should NOT be used in production
-                # The proper way is to fix the state parameter issue
                 token_endpoint = oauth.google.server_metadata['token_endpoint']
                 token_params = {
                     'client_id': GOOGLE_CLIENT_ID,
@@ -120,10 +107,13 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
                         user_info = await resp.json()
                 
                 token['userinfo'] = user_info
+                frontend_callback = request.session.get("redirect_uri", f"{settings.FRONTEND_URL}/oauth/callback")
             else:
                 raise e
         
-        user_info = token.get("userinfo")
+        # If we have a token but not user_info yet, extract it
+        if token and not user_info:
+            user_info = token.get("userinfo")
         
         if not user_info:
             raise HTTPException(
