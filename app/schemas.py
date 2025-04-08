@@ -192,3 +192,43 @@ class FormulaStepUpdate(BaseModel):
 
 class FormulaStepsUpdate(BaseModel):
     steps: List[FormulaStepUpdate]
+
+
+
+
+# Notification schemas
+class NotificationBase(BaseModel):
+    title: str
+    message: str
+    notification_type: str
+    reference_id: Optional[int] = None
+
+class NotificationCreate(NotificationBase):
+    pass
+
+class NotificationRead(NotificationBase):
+    id: int
+    user_id: int
+    is_read: bool
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+# Notification preference schemas
+class NotificationPreferenceBase(BaseModel):
+    notification_type: str
+    email_enabled: bool
+    push_enabled: bool
+    sms_enabled: bool
+
+class NotificationPreferenceUpdate(BaseModel):
+    email_enabled: bool
+    push_enabled: bool
+    sms_enabled: bool
+
+class NotificationPreferenceRead(NotificationPreferenceBase):
+    user_id: int
+    
+    class Config:
+        from_attributes = True

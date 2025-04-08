@@ -104,6 +104,32 @@ except ImportError:
     print("Warning: Formulas endpoints not found, skipping...")
 
 try:
+    from app.api.endpoints import notifications
+    app.include_router(notifications.router, prefix="/api/notifications", tags=["notifications"])
+except ImportError:
+    print("Warning: Notification endpoints not found, skipping...")
+try:
+    from app.api.endpoints import knowledge_base
+    app.include_router(
+            knowledge_base.router,
+            prefix="/api/knowledge",
+            tags=["knowledge_base"]
+        )
+except ImportError:
+    print("Warning: knowledge base endpoint not found, skipping ...")
+
+try:
+    from app.api.endpoints import shop
+    app.include_router(
+        shop.router,
+        prefix="/api/shop",
+        tags=["shop"]
+    )
+except ImportError:
+    print("Warning: shop endpoint not found, skipping ...")
+
+
+try:
     from app.api.endpoints import ingredients
     app.include_router(ingredients.router, prefix="/api/ingredients", tags=["ingredients"])
 except ImportError:
@@ -152,6 +178,8 @@ async def test_token(current_user: models.User = Depends(get_current_user)):
         "user_id": current_user.id,
         "email": current_user.email
     }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
