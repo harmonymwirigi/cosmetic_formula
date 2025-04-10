@@ -42,13 +42,16 @@ def update_user_me(
 @router.get("/status", response_model=Dict[str, Any])
 def get_user_status(current_user: models.User = Depends(get_current_user)):
     """
-    Get user status including subscription needs
+    Get user status including subscription needs and basic user info
     """
     return {
         "id": current_user.id,
         "needs_subscription": current_user.needs_subscription,
         "subscription_type": current_user.subscription_type,
-        "is_active": current_user.is_active
+        "is_active": current_user.is_active,
+        "email": current_user.email,
+        "first_name": current_user.first_name,
+        "last_name": current_user.last_name
     }
 
 

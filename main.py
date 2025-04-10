@@ -74,6 +74,11 @@ try:
 except ImportError:
     print("Warning: Google OAuth router not found, skipping...")
 
+try:
+    from app.api.endpoints import user_profile
+    app.include_router(user_profile.router, prefix="/api/user", tags=["user"])
+except ImportError:
+    print("Warning: User profile endpoints not found, skipping...")
 # Root endpoint
 @app.get("/")
 def read_root():

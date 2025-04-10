@@ -12,9 +12,9 @@ from app.utils.response_formatter import format_formula_response
 
 router = APIRouter()
 
-@router.post("/generate_formula", response_model=None)
+@router.post("/generate_formula", response_model=Dict[str, Any])
 async def generate_formula(
-    formula_request: dict,
+    formula_request: Dict[str, Any],
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ) -> Dict[str, Any]:
@@ -27,20 +27,58 @@ async def generate_formula(
     - preferred_ingredients: Optional list of ingredient IDs
     - avoided_ingredients: Optional list of ingredient IDs
     """
-    # Check if user has reached formula limit (for free accounts)
+    # Check subscription tier - restrict AI formula to premium/professional
     if current_user.subscription_type == models.SubscriptionType.FREE:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="AI formula generation requires a Premium or Professional subscription."
+        )
+    
+    # Check if user has reached formula limit (for premium accounts)
+    if current_user.subscription_type == models.SubscriptionType.PREMIUM:
         formula_count = db.query(models.Formula).filter(models.Formula.user_id == current_user.id).count()
-        if formula_count >= 3:
+        if formula_count >= 10:  # Adjust the limit for premium users
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Free accounts are limited to 3 formulas. Please upgrade your subscription."
+                detail="Premium accounts are limited to 10 AI-generated formulas per month. Please upgrade to Professional for unlimited formulas."
             )
     
-    # Extract request data
-    product_type = formula_request.get("product_type")
+    # Extract request data - handle the case where product_type is a dict
+    if isinstance(formula_request.get("product_type"), dict):
+        product_type = formula_request["product_type"].get("product_type")
+        formula_name = formula_request["product_type"].get("formula_name")
+        preferred_ingredients = formula_request["product_type"].get("preferred_ingredients", [])
+        avoided_ingredients = formula_request["product_type"].get("avoided_ingredients", [])
+    else:
+        product_type = formula_request.get("product_type")
+        formula_name = formula_request.get("formula_name")
+        preferred_ingredients = formula_request.get("preferred_ingredients", [])
+        avoided_ingredients = formula_request.get("avoided_ingredients", [])
+    
     skin_concerns = formula_request.get("skin_concerns", [])
-    preferred_ingredients = formula_request.get("preferred_ingredients", [])
-    avoided_ingredients = formula_request.get("avoided_ingredients", [])
+    
+    # Get user profile data (so they don't need to input it repeatedly)
+    user_profile = crud.get_user_profile(db, current_user.id)
+    
+    # Add profile data to the formula generation request
+    profile_data = {}
+    if user_profile:
+        profile_data = {
+            "skin_type": user_profile.skin_type,
+            "skin_concerns": user_profile.skin_concerns,
+            "sensitivities": user_profile.sensitivities,
+            "climate": user_profile.climate
+        }
+    
+    # Add professional fields if the user is on professional tier
+    professional_data = {}
+    if current_user.subscription_type == models.SubscriptionType.PROFESSIONAL:
+        professional_data = {
+            "brand_name": formula_request.get("brand_name", ""),
+            "target_audience": formula_request.get("target_audience", ""),
+            "target_markets": formula_request.get("target_markets", []),
+            "brand_positioning": formula_request.get("brand_positioning", "")
+        }
     
     # Validate input
     if not product_type:
@@ -50,63 +88,28 @@ async def generate_formula(
         )
     
     try:
-        # Use OpenAI service if available and user has appropriate subscription
-        use_openai = True
+        # Use OpenAI service with tiered prompt generation
+        generator = OpenAIFormulaGenerator(db)
+        formula_data = await generator.generate_formula(
+            product_type=product_type,
+            skin_concerns=skin_concerns,
+            user_subscription=current_user.subscription_type,
+            preferred_ingredients=preferred_ingredients,
+            avoided_ingredients=avoided_ingredients,
+            user_profile=profile_data,
+            professional_data=professional_data
+        )
         
-        # For free users, we might want to restrict certain advanced features
-        if current_user.subscription_type == models.SubscriptionType.FREE:
-            # For example, limit the number of skin concerns or preferred ingredients
-            if len(skin_concerns) > 2:
-                skin_concerns = skin_concerns[:2]
-                
-            if len(preferred_ingredients) > 3:
-                preferred_ingredients = preferred_ingredients[:3]
-        
-        if use_openai:
-            try:
-                # Create OpenAI generator and generate formula
-                generator = OpenAIFormulaGenerator(db)
-                formula_data = await generator.generate_formula(
-                    product_type=product_type,
-                    skin_concerns=skin_concerns,
-                    user_subscription=current_user.subscription_type,
-                    preferred_ingredients=preferred_ingredients,
-                    avoided_ingredients=avoided_ingredients
-                )
-                
-                # Convert the OpenAI response to a FormulaCreate schema
-                formula_create = schemas.FormulaCreate(
-                    name=formula_data.get("name", f"AI-Generated {product_type.title()}"),
-                    description=formula_data.get("description", ""),
-                    type=product_type.title(),
-                    is_public=False,
-                    total_weight=100.0,
-                    ingredients=formula_data.get("ingredients", []),
-                    steps=formula_data.get("steps", [])
-                )
-                
-            except Exception as e:
-                print(f"OpenAI generation failed: {str(e)}")
-                print("Falling back to rule-based generator")
-                # Fall back to the rule-based generator if OpenAI fails
-                generator = AIFormulaGenerator(db)
-                formula_create = generator.generate_formula(
-                    product_type=product_type,
-                    skin_concerns=skin_concerns,
-                    user_subscription=current_user.subscription_type,
-                    preferred_ingredients=preferred_ingredients,
-                    avoided_ingredients=avoided_ingredients
-                )
-        else:
-            # Use the rule-based generator as a fallback
-            generator = AIFormulaGenerator(db)
-            formula_create = generator.generate_formula(
-                product_type=product_type,
-                skin_concerns=skin_concerns,
-                user_subscription=current_user.subscription_type,
-                preferred_ingredients=preferred_ingredients,
-                avoided_ingredients=avoided_ingredients
-            )
+        # Convert the OpenAI response to a FormulaCreate schema
+        formula_create = schemas.FormulaCreate(
+            name=formula_name or formula_data.get("name", f"AI-Generated {product_type.title()}"),
+            description=formula_data.get("description", ""),
+            type=product_type.title(),
+            is_public=False,
+            total_weight=100.0,
+            ingredients=formula_data.get("ingredients", []),
+            steps=formula_data.get("steps", [])
+        )
         
         # Create the formula in the database
         db_formula = crud.create_formula(db=db, formula=formula_create, user_id=current_user.id)
@@ -120,11 +123,16 @@ async def generate_formula(
             detail=str(e)
         )
     except Exception as e:
+        # Log the full error for debugging
+        import traceback
+        print(f"Error generating formula: {str(e)}")
+        print(traceback.format_exc())
+        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error generating formula: {str(e)}"
         )
-    
+        
 
 @router.post("/check-compatibility")
 def check_ingredient_compatibility(
@@ -143,7 +151,6 @@ def check_ingredient_compatibility(
         return {"compatible": True, "issues": []}
     
     # Get the rule-based generator to check compatibility
-    # This is a simplified implementation
     generator = AIFormulaGenerator(db)
     
     # Get ingredient details
@@ -168,12 +175,4 @@ def check_ingredient_compatibility(
     return {
         "compatible": len(issues) == 0,
         "issues": issues
-    }
-
-@router.get("/test")
-def test_endpoint():
-    """Test endpoint to verify AI formula router is working"""
-    return {
-        "status": "success",
-        "message": "AI Formula API is working correctly"
     }

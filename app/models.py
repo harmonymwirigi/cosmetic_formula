@@ -1,11 +1,12 @@
 # backend/app/models.py
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float, Text, DateTime, Enum, Table
 from sqlalchemy.orm import relationship
 import enum
 from sqlalchemy.sql import func
 from .database import Base
 import uuid
 from datetime import datetime
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float, Text, DateTime, Enum, Table, JSON
+
 # Many-to-many relationship between formulas and ingredients
 formula_ingredients = Table(
     "formula_ingredients",
@@ -41,6 +42,28 @@ class User(Base):
     # Relationships
     formulas = relationship("Formula", back_populates="user")
 
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    skin_type = Column(String, nullable=True)  # e.g., "dry", "oily", "combination"
+    skin_concerns = Column(JSON, nullable=True)  # stored as JSON array
+    sensitivities = Column(JSON, nullable=True)  # stored as JSON array
+    climate = Column(String, nullable=True)  # e.g., "tropical", "dry", "temperate"
+    hair_type = Column(String, nullable=True)  # e.g., "straight", "wavy", "curly"
+    hair_concerns = Column(JSON, nullable=True)  # stored as JSON array
+    brand_info = Column(JSON, nullable=True)  # For professional users
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationship
+    user = relationship("User", back_populates="profile")
+
+# Add this relation to your User model
+# If you already have a User model defined, you need to add this line at the end of the file
+User.profile = relationship("UserProfile", back_populates="user", uselist=False)
 class Formula(Base):
     __tablename__ = "formulas"
 

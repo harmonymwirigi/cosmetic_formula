@@ -172,6 +172,10 @@ class FormulaList(BaseModel):
     name: str
     type: str
     created_at: datetime
+    updated_at: Optional[datetime] = None
+    is_public: bool = False
+    total_weight: float = 100.0
+    ingredients: Optional[int] = 0
     
     class Config:
         from_attributes = True
@@ -232,3 +236,113 @@ class NotificationPreferenceRead(NotificationPreferenceBase):
     
     class Config:
         from_attributes = True
+
+# backend/app/schemas.py (Updated UserProfile section)
+
+class UserProfileBase(BaseModel):
+    # Personal Info & Environment
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    is_pregnant: Optional[bool] = None
+    fitzpatrick_type: Optional[int] = None
+    climate: Optional[str] = None
+    
+    # Skin Characteristics
+    skin_type: Optional[str] = None
+    breakout_frequency: Optional[str] = None
+    skin_texture: Optional[List[str]] = None
+    skin_redness: Optional[str] = None
+    end_of_day_skin_feel: Optional[str] = None
+    
+    # Skin Concerns & Preferences
+    skin_concerns: Optional[List[str]] = None
+    preferred_textures: Optional[List[str]] = None
+    preferred_routine_length: Optional[str] = None
+    preferred_product_types: Optional[List[str]] = None
+    lifestyle_factors: Optional[List[str]] = None
+    sensitivities: Optional[List[str]] = None
+    ingredients_to_avoid: Optional[str] = None
+    
+    # Professional Fields (only used for professional tier)
+    brand_name: Optional[str] = None
+    development_stage: Optional[str] = None
+    product_category: Optional[str] = None
+    target_demographic: Optional[str] = None
+    sales_channels: Optional[List[str]] = None
+    target_texture: Optional[str] = None
+    performance_goals: Optional[List[str]] = None
+    desired_certifications: Optional[List[str]] = None
+    regulatory_requirements: Optional[str] = None
+    restricted_ingredients: Optional[str] = None
+    preferred_actives: Optional[str] = None
+    production_scale: Optional[str] = None
+    price_positioning: Optional[str] = None
+    competitor_brands: Optional[str] = None
+    brand_voice: Optional[str] = None
+    product_inspirations: Optional[str] = None
+
+class UserProfileCreate(UserProfileBase):
+    pass
+
+class UserProfileUpdate(UserProfileBase):
+    pass
+
+class UserProfileResponse(UserProfileBase):
+    id: Optional[int] = None
+    user_id: Optional[int] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+# New schema for AI Formula Generation
+class FormulaGenerationRequest(BaseModel):
+    product_type: str
+    formula_name: Optional[str] = None
+    
+    # Questionnaire data (all optional as they might come from profile)
+    # Personal Info
+    age: Optional[int] = None
+    gender: Optional[str] = None
+    is_pregnant: Optional[bool] = None
+    fitzpatrick_type: Optional[int] = None
+    climate: Optional[str] = None
+    
+    # Skin Characteristics
+    skin_type: Optional[str] = None
+    breakout_frequency: Optional[str] = None
+    skin_texture: Optional[List[str]] = None
+    skin_redness: Optional[str] = None
+    end_of_day_skin_feel: Optional[str] = None
+    
+    # Skin Concerns & Preferences
+    skin_concerns: Optional[List[str]] = None
+    preferred_textures: Optional[List[str]] = None
+    preferred_routine_length: Optional[str] = None
+    preferred_product_types: Optional[List[str]] = None
+    lifestyle_factors: Optional[List[str]] = None
+    sensitivities: Optional[List[str]] = None
+    ingredients_to_avoid: Optional[str] = None
+    
+    # Ingredient preferences
+    preferred_ingredients: Optional[List[int]] = None
+    avoided_ingredients: Optional[List[int]] = None
+    
+    # Professional Fields (only used for professional tier)
+    brand_name: Optional[str] = None
+    development_stage: Optional[str] = None
+    product_category: Optional[str] = None
+    target_demographic: Optional[str] = None
+    sales_channels: Optional[List[str]] = None
+    target_texture: Optional[str] = None
+    performance_goals: Optional[List[str]] = None
+    desired_certifications: Optional[List[str]] = None
+    regulatory_requirements: Optional[str] = None
+    restricted_ingredients: Optional[str] = None
+    preferred_actives: Optional[str] = None
+    production_scale: Optional[str] = None
+    price_positioning: Optional[str] = None
+    competitor_brands: Optional[str] = None
+    brand_voice: Optional[str] = None
+    product_inspirations: Optional[str] = None

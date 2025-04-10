@@ -202,7 +202,33 @@ def read_formulas(
     Get all formulas for the current user.
     """
     formulas = crud.get_user_formulas(db, user_id=current_user.id, skip=skip, limit=limit)
-    return formulas
+    
+    # Create a list to store the formatted formulas
+    formatted_formulas = []
+    
+    # Process each formula to include ingredient count and total weight
+    for formula in formulas:
+        # Count ingredients for this formula using the formula_ingredients table
+        from sqlalchemy import func
+        ingredient_count = db.query(func.count()).select_from(models.formula_ingredients).filter(
+            models.formula_ingredients.c.formula_id == formula.id
+        ).scalar() or 0
+        
+        # Create the formatted formula dictionary
+        formatted_formula = {
+            "id": formula.id,
+            "name": formula.name,
+            "type": formula.type,
+            "created_at": formula.created_at,
+            "updated_at": formula.updated_at,
+            "is_public": formula.is_public,
+            "total_weight": formula.total_weight or 100.0,  # Default to 100g if not set
+            "ingredients": ingredient_count
+        }
+        
+        formatted_formulas.append(formatted_formula)
+    
+    return formatted_formulas
 @router.get("/{formula_id}", response_model=None)
 def read_formula(
     formula_id: int,
@@ -380,3 +406,50 @@ def create_formula(
             for step in formula_with_details.steps
         ]
     }
+
+@router.delete("/{formula_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_formula(
+    formula_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Delete a formula by ID.
+    """
+    # Get the formula from the database
+    formula = crud.get_formula(db, formula_id)
+    
+    # Check if formula exists and belongs to the current user
+    if not formula:
+        raise HTTPException(status_code=404, detail="Formula not found")
+    
+    if formula.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this formula")
+    
+    try:
+        # Delete formula ingredients first
+        db.execute(
+            models.formula_ingredients.delete().where(
+                models.formula_ingredients.c.formula_id == formula_id
+            )
+        )
+        
+        # Delete formula steps
+        db.query(models.FormulaStep).filter(
+            models.FormulaStep.formula_id == formula_id
+        ).delete()
+        
+        # Delete the formula itself
+        db.query(models.Formula).filter(
+            models.Formula.id == formula_id
+        ).delete()
+        
+        db.commit()
+        return {"detail": "Formula deleted successfully"}
+    
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete formula: {str(e)}"
+        )

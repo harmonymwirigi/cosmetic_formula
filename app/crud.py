@@ -1,7 +1,7 @@
 # backend/app/crud.py
 from sqlalchemy.orm import Session
 from . import models, schemas
-from typing import List, Optional
+from typing import List,Dict,Optional, Any
 from fastapi import HTTPException, status
 
 # User CRUD operations
@@ -242,3 +242,53 @@ def delete_formula(db: Session, formula_id: int, user_id: int) -> None:
     # Delete the formula
     db.delete(db_formula)
     db.commit()
+
+
+def get_user_profile(db: Session, user_id: int) -> Optional[models.UserProfile]:
+    """Get a user's profile"""
+    return db.query(models.UserProfile).filter(models.UserProfile.user_id == user_id).first()
+
+def create_user_profile(db: Session, profile_data: Dict[str, Any], user_id: int) -> models.UserProfile:
+    """Create a new user profile"""
+    db_profile = models.UserProfile(
+        user_id=user_id,
+        skin_type=profile_data.get("skin_type"),
+        skin_concerns=profile_data.get("skin_concerns"),
+        sensitivities=profile_data.get("sensitivities"),
+        climate=profile_data.get("climate"),
+        hair_type=profile_data.get("hair_type"),
+        hair_concerns=profile_data.get("hair_concerns"),
+        brand_info=profile_data.get("brand_info")
+    )
+    db.add(db_profile)
+    db.commit()
+    db.refresh(db_profile)
+    return db_profile
+
+def update_user_profile(db: Session, profile_data: Dict[str, Any], user_id: int) -> models.UserProfile:
+    """Update an existing user profile"""
+    db_profile = get_user_profile(db, user_id)
+    
+    if not db_profile:
+        # Create a new profile if it doesn't exist
+        return create_user_profile(db, profile_data, user_id)
+    
+    # Update fields that are provided
+    if "skin_type" in profile_data:
+        db_profile.skin_type = profile_data["skin_type"]
+    if "skin_concerns" in profile_data:
+        db_profile.skin_concerns = profile_data["skin_concerns"]
+    if "sensitivities" in profile_data:
+        db_profile.sensitivities = profile_data["sensitivities"]
+    if "climate" in profile_data:
+        db_profile.climate = profile_data["climate"]
+    if "hair_type" in profile_data:
+        db_profile.hair_type = profile_data["hair_type"]
+    if "hair_concerns" in profile_data:
+        db_profile.hair_concerns = profile_data["hair_concerns"]
+    if "brand_info" in profile_data:
+        db_profile.brand_info = profile_data["brand_info"]
+    
+    db.commit()
+    db.refresh(db_profile)
+    return db_profile
