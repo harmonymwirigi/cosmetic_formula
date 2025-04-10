@@ -97,7 +97,8 @@ class OpenAIFormulaGenerator:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.4,
-                max_tokens=2500,
+                max_tokens=1500,  # Reduced from 2500
+                timeout=12,
                 n=1,
                 stop=None,
             )

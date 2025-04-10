@@ -10,7 +10,7 @@ load_dotenv(dotenv_path=env_path)
 class Settings:
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./app.db")
-    
+    print("Database URL:", DATABASE_URL)  # Debugging line to check the database URL
     # Authentication
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your_super_secret_key_change_this_in_production")
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
