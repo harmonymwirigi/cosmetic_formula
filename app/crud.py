@@ -156,12 +156,11 @@ def create_formula_step(
     db.refresh(db_step)
     return db_step
 
-def create_formula(
-    db: Session, 
-    formula: schemas.FormulaCreate, 
-    user_id: int
-) -> models.Formula:
-    # Create formula
+def create_formula(db: Session, formula: schemas.FormulaCreate, user_id: int) -> models.Formula:
+    """
+    Create a new formula with ingredients and steps.
+    """
+    # Create formula object
     db_formula = models.Formula(
         name=formula.name,
         description=formula.description,
@@ -170,37 +169,59 @@ def create_formula(
         total_weight=formula.total_weight,
         user_id=user_id
     )
-    db.add(db_formula)
-    db.commit()
-    db.refresh(db_formula)
     
-    # Add ingredients
-    for ingredient_data in formula.ingredients:
-        # Check if ingredient exists
-        db_ingredient = db.query(models.Ingredient).get(ingredient_data.ingredient_id)
-        if not db_ingredient:
-            db.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Ingredient with id {ingredient_data.ingredient_id} not found"
-            )
+    try:
+        # Add the formula to the session
+        db.add(db_formula)
+        db.commit()
+        db.refresh(db_formula)
         
-        # Add to formula_ingredients association table
-        stmt = models.formula_ingredients.insert().values(
-            formula_id=db_formula.id,
-            ingredient_id=ingredient_data.ingredient_id,
-            percentage=ingredient_data.percentage,
-            order=ingredient_data.order
-        )
-        db.execute(stmt)
+        # Add ingredients
+        if formula.ingredients:
+            for ingredient in formula.ingredients:
+                # Validate that the ingredient exists
+                db_ingredient = db.query(models.Ingredient).filter(
+                    models.Ingredient.id == ingredient.ingredient_id
+                ).first()
+                
+                if not db_ingredient:
+                    # Log the issue but continue with other ingredients
+                    print(f"Warning: Ingredient ID {ingredient.ingredient_id} not found in database")
+                    continue
+                
+                # Create ingredient association
+                db.execute(
+                    models.formula_ingredients.insert().values(
+                        formula_id=db_formula.id,
+                        ingredient_id=ingredient.ingredient_id,
+                        percentage=ingredient.percentage,
+                        order=ingredient.order
+                    )
+                )
+        
+        # Add steps
+        if formula.steps:
+            for step in formula.steps:
+                db_step = models.FormulaStep(
+                    formula_id=db_formula.id,
+                    description=step.description,
+                    order=step.order
+                )
+                db.add(db_step)
+        
+        # Commit all the ingredient and step additions
+        db.commit()
+        
+        # Return the formula with all relationships loaded
+        return db.query(models.Formula).filter(models.Formula.id == db_formula.id).first()
     
-    # Add steps
-    for step_data in formula.steps:
-        create_formula_step(db, step_data, db_formula.id)
-    
-    db.commit()
-    db.refresh(db_formula)
-    return db_formula
+    except Exception as e:
+        # Rollback if there was an error
+        db.rollback()
+        print(f"Error creating formula: {str(e)}")
+        import traceback
+        print(traceback.format_exc())
+        raise
 
 def update_formula(
     db: Session, 
@@ -264,31 +285,37 @@ def create_user_profile(db: Session, profile_data: Dict[str, Any], user_id: int)
     db.commit()
     db.refresh(db_profile)
     return db_profile
-
 def update_user_profile(db: Session, profile_data: Dict[str, Any], user_id: int) -> models.UserProfile:
-    """Update an existing user profile"""
+    """Update or create a user profile"""
+    # Get existing profile or create new one
     db_profile = get_user_profile(db, user_id)
     
     if not db_profile:
-        # Create a new profile if it doesn't exist
-        return create_user_profile(db, profile_data, user_id)
+        # Create new profile
+        db_profile = models.UserProfile(user_id=user_id)
+        db.add(db_profile)
     
-    # Update fields that are provided
-    if "skin_type" in profile_data:
-        db_profile.skin_type = profile_data["skin_type"]
-    if "skin_concerns" in profile_data:
-        db_profile.skin_concerns = profile_data["skin_concerns"]
-    if "sensitivities" in profile_data:
-        db_profile.sensitivities = profile_data["sensitivities"]
-    if "climate" in profile_data:
-        db_profile.climate = profile_data["climate"]
-    if "hair_type" in profile_data:
-        db_profile.hair_type = profile_data["hair_type"]
-    if "hair_concerns" in profile_data:
-        db_profile.hair_concerns = profile_data["hair_concerns"]
+    # Separate brand_info data if it exists
+    brand_info = None
     if "brand_info" in profile_data:
-        db_profile.brand_info = profile_data["brand_info"]
+        brand_info = profile_data.pop("brand_info")
     
+    # Update direct fields on the profile
+    for key, value in profile_data.items():
+        if hasattr(db_profile, key):
+            setattr(db_profile, key, value)
+    
+    # If we have a brand_info field in our model, update it directly
+    if hasattr(db_profile, "brand_info") and brand_info is not None:
+        db_profile.brand_info = brand_info
+    # Otherwise, update individual brand fields if they're in our model
+    elif brand_info is not None:
+        for key, value in brand_info.items():
+            if hasattr(db_profile, key):
+                setattr(db_profile, key, value)
+    
+    # Commit changes
     db.commit()
     db.refresh(db_profile)
+    
     return db_profile

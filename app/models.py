@@ -48,13 +48,59 @@ class UserProfile(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
-    skin_type = Column(String, nullable=True)  # e.g., "dry", "oily", "combination"
+    
+    # Personal Info & Environment
+    age = Column(Integer, nullable=True)
+    gender = Column(String, nullable=True)  # Female/Male/Non-binary/Prefer not to say
+    is_pregnant = Column(Boolean, nullable=True)
+    fitzpatrick_type = Column(Integer, nullable=True)  # I-VI
+    climate = Column(String, nullable=True)  # Dry/Humid/Cold/Tropical/High altitude/Mixed
+    
+    # Skin Characteristics
+    skin_type = Column(String, nullable=True)  # Oily/Dry/Combination/Normal/Sensitive
+    breakout_frequency = Column(String, nullable=True)  # Never/Occasionally/Frequently/Constant
+    skin_texture = Column(JSON, nullable=True)  # Array of textures
+    skin_redness = Column(String, nullable=True)  # Yes often/Only with certain products/Rarely/Rosacea-prone
+    end_of_day_skin_feel = Column(String, nullable=True)  # Greasy/Dry/Balanced/Itchy
+    
+    # Skin Concerns & Preferences
     skin_concerns = Column(JSON, nullable=True)  # stored as JSON array
+    preferred_textures = Column(JSON, nullable=True)  # stored as JSON array
+    preferred_routine_length = Column(String, nullable=True)  # Simple/Balanced/Layered
+    preferred_product_types = Column(JSON, nullable=True)  # stored as JSON array
+    lifestyle_factors = Column(JSON, nullable=True)  # stored as JSON array
     sensitivities = Column(JSON, nullable=True)  # stored as JSON array
-    climate = Column(String, nullable=True)  # e.g., "tropical", "dry", "temperate"
-    hair_type = Column(String, nullable=True)  # e.g., "straight", "wavy", "curly"
-    hair_concerns = Column(JSON, nullable=True)  # stored as JSON array
-    brand_info = Column(JSON, nullable=True)  # For professional users
+    ingredients_to_avoid = Column(Text, nullable=True)  # Free text field
+    
+    # Professional Fields (only used for professional tier)
+    # Business Profile
+    brand_name = Column(String, nullable=True)
+    development_stage = Column(String, nullable=True)
+    product_category = Column(String, nullable=True)
+    target_demographic = Column(String, nullable=True)
+    sales_channels = Column(JSON, nullable=True)  # stored as JSON array
+    # Hair Profile
+    hair_type = Column(String, nullable=True)
+    hair_concerns = Column(JSON, nullable=True)
+    brand_info = Column(JSON, nullable=True)
+    # Product & Performance
+    target_texture = Column(String, nullable=True)
+    performance_goals = Column(JSON, nullable=True)  # stored as JSON array
+    desired_certifications = Column(JSON, nullable=True)  # stored as JSON array
+    
+    # Compliance & Formulation
+    regulatory_requirements = Column(String, nullable=True)
+    restricted_ingredients = Column(Text, nullable=True)
+    preferred_actives = Column(Text, nullable=True)
+    production_scale = Column(String, nullable=True)
+    
+    # Branding & Positioning
+    price_positioning = Column(String, nullable=True)
+    competitor_brands = Column(Text, nullable=True)
+    brand_voice = Column(String, nullable=True)
+    product_inspirations = Column(Text, nullable=True)
+    
+    # Standard metadata
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 

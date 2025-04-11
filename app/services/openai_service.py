@@ -21,33 +21,55 @@ class OpenAIFormulaGenerator:
     
     async def generate_formula(
         self,
-        product_type: Union[str, Dict[str, Any]],
-        skin_concerns: List[str],
+        formula_request: Dict[str, Any],
         user_subscription: models.SubscriptionType,
-        preferred_ingredients: Optional[List[int]] = None,
-        avoided_ingredients: Optional[List[int]] = None,
-        user_profile: Optional[Dict[str, Any]] = None,
-        professional_data: Optional[Dict[str, Any]] = None
+        user_id: int
     ) -> Dict[str, Any]:
         """
-        Generate a formula using OpenAI based on subscription tier and preferences.
-        
-        Args:
-            product_type: Type of product to generate (serum, moisturizer, etc.)
-            skin_concerns: List of skin concerns from the request
-            user_subscription: User's subscription tier
-            preferred_ingredients: List of ingredient IDs to include
-            avoided_ingredients: List of ingredient IDs to avoid
-            user_profile: User's stored profile data (skin/hair details)
-            professional_data: Professional tier brand information
+            Generate a formula using OpenAI based on subscription tier and preferences.
             
-        Returns:
-            Dictionary with formula data
-        """
-        # Handle product_type being a dict (from frontend)
-        if isinstance(product_type, dict):
-            product_type = product_type.get("product_type", "moisturizer")
+            Args:
+                formula_request: Complete formula generation request with all profile fields
+                user_subscription: User's subscription tier
+                user_id: User ID to retrieve profile data
+                
+            Returns:
+                Dictionary with formula data
+            """
+        print(f"Generating formula for user {user_id} with request: {formula_request}")
+        # Extract basic information
+        product_type = formula_request.get("product_type", "moisturizer")
+        valid_product_types = ["serum", "moisturizer", "cleanser", "toner", "mask", "essence"]
+        if product_type.lower() not in valid_product_types:
+            raise ValueError(f"Invalid product type. Must be one of: {', '.join(valid_product_types)}")
         
+        # Extract ingredient preferences
+        # Normalize array fields
+        for field in ["preferred_ingredients", "avoided_ingredients", "skin_concerns", 
+                    "sensitivities", "preferred_textures", "preferred_product_types", 
+                    "lifestyle_factors", "sales_channels", "performance_goals", 
+                    "desired_certifications"]:
+            # Ensure field exists and is a list
+            if field in formula_request:
+                if not isinstance(formula_request[field], list):
+                    # Try to parse JSON string
+                    if isinstance(formula_request[field], str):
+                        try:
+                            formula_request[field] = json.loads(formula_request[field])
+                        except json.JSONDecodeError:
+                            formula_request[field] = []
+                    else:
+                        formula_request[field] = []
+        
+        # Extract ingredient preferences
+        preferred_ingredients = formula_request.get("preferred_ingredients", [])
+        avoided_ingredients = formula_request.get("avoided_ingredients", [])
+        
+        # Ensure these are lists
+        if not isinstance(preferred_ingredients, list):
+            preferred_ingredients = []
+        if not isinstance(avoided_ingredients, list):
+            avoided_ingredients = []
         # Get ingredient details for preferred/avoided ingredients
         preferred_ingredient_names = []
         avoided_ingredient_names = []
@@ -63,28 +85,78 @@ class OpenAIFormulaGenerator:
                 models.Ingredient.id.in_(avoided_ingredients)
             ).all()
             avoided_ingredient_names = [ing.name for ing in ingredients]
+            
+        # Add ingredients to avoid from text field
+        if formula_request.get("ingredients_to_avoid"):
+            additional_avoided = formula_request["ingredients_to_avoid"].split(",")
+            avoided_ingredient_names.extend([ing.strip() for ing in additional_avoided])
+            
+        # Add ingredients to avoid from sensitivities
+        if formula_request.get("sensitivities"):
+            avoided_ingredient_names.extend(formula_request["sensitivities"])
         
-        # If we have a user profile, use the skin concerns from there if none provided in request
-        if user_profile and not skin_concerns and user_profile.get('skin_concerns'):
-            # Handle different types of skin_concerns
-            if isinstance(user_profile['skin_concerns'], str):
-                try:
-                    skin_concerns = json.loads(user_profile['skin_concerns'])
-                except:
-                    skin_concerns = []
-            elif isinstance(user_profile['skin_concerns'], list):
-                skin_concerns = user_profile['skin_concerns']
-            else:
-                skin_concerns = []
+        # Get user profile data
+        user_profile = self.db.query(models.UserProfile).filter(
+            models.UserProfile.user_id == user_id
+        ).first()
+        
+        # Merge form data with profile data (form data takes precedence)
+        profile_data = {}
+        if user_profile:
+            # Convert all None values to empty objects/lists
+            profile_dict = {c.name: getattr(user_profile, c.name) for c in user_profile.__table__.columns 
+                           if c.name not in ['id', 'user_id', 'created_at', 'updated_at']}
+            
+            # Ensure JSON fields are properly parsed
+            for key, value in profile_dict.items():
+                if value and isinstance(value, str) and key in [
+                    'skin_concerns', 'skin_texture', 'preferred_textures',
+                    'preferred_product_types', 'lifestyle_factors', 'sensitivities',
+                    'sales_channels', 'performance_goals', 'desired_certifications'
+                ]:
+                    try:
+                        profile_dict[key] = json.loads(value)
+                    except:
+                        profile_dict[key] = []
+                        
+            profile_data = profile_dict
+            
+        # Merge form data with profile data (form data takes precedence)
+        for key, value in formula_request.items():
+            if value is not None and key not in ['product_type', 'formula_name', 
+                                                'preferred_ingredients', 'avoided_ingredients']:
+                profile_data[key] = value
+                
+        # Prepare professional data for professional tier users
+        professional_data = {}
+        if user_subscription == models.SubscriptionType.PROFESSIONAL:
+            professional_data = {
+                'brand_name': profile_data.get('brand_name', ''),
+                'development_stage': profile_data.get('development_stage', ''),
+                'product_category': profile_data.get('product_category', ''),
+                'target_demographic': profile_data.get('target_demographic', ''),
+                'sales_channels': profile_data.get('sales_channels', []),
+                'target_texture': profile_data.get('target_texture', ''),
+                'performance_goals': profile_data.get('performance_goals', []),
+                'desired_certifications': profile_data.get('desired_certifications', []),
+                'regulatory_requirements': profile_data.get('regulatory_requirements', ''),
+                'restricted_ingredients': profile_data.get('restricted_ingredients', ''),
+                'preferred_actives': profile_data.get('preferred_actives', ''),
+                'production_scale': profile_data.get('production_scale', ''),
+                'price_positioning': profile_data.get('price_positioning', ''),
+                'competitor_brands': profile_data.get('competitor_brands', ''),
+                'brand_voice': profile_data.get('brand_voice', ''),
+                'product_inspirations': profile_data.get('product_inspirations', '')
+            }
         
         # Generate the appropriate prompt based on subscription tier and data
         prompt = self._generate_tiered_prompt(
             product_type,
-            skin_concerns,
+            profile_data.get('skin_concerns', []),
             user_subscription,
             preferred_ingredient_names,
             avoided_ingredient_names,
-            user_profile,
+            profile_data,
             professional_data
         )
         
@@ -97,8 +169,7 @@ class OpenAIFormulaGenerator:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.4,
-                max_tokens=1500,  # Reduced from 2500
-                timeout=12,
+                max_tokens=2500,
                 n=1,
                 stop=None,
             )
@@ -115,7 +186,7 @@ class OpenAIFormulaGenerator:
             # Fall back to rule-based generation
             return self.rule_based_generator.generate_formula(
                 product_type,
-                skin_concerns,
+                profile_data.get('skin_concerns', []),
                 user_subscription,
                 preferred_ingredients,
                 avoided_ingredients
@@ -128,55 +199,84 @@ class OpenAIFormulaGenerator:
         user_subscription: models.SubscriptionType,
         preferred_ingredients: List[str],
         avoided_ingredients: List[str],
-        user_profile: Optional[Dict[str, Any]],
-        professional_data: Optional[Dict[str, Any]]
+        profile_data: Dict[str, Any],
+        professional_data: Optional[Dict[str, Any]] = None
     ) -> str:
         """
-        Generate a tiered prompt based on user subscription level.
+        Generate a tiered prompt based on user subscription level, incorporating all profile data.
         """
         # Ensure skin_concerns is a list of strings
         if not skin_concerns:
             skin_concerns = ["general skincare"]
         
-        # Ensure user_profile is a dictionary
-        if user_profile is None:
-            user_profile = {}
-        
+        # Base prompt for all tiers
         base_prompt = f"""
 Generate a complete cosmetic formula for a {product_type} that addresses the following skin concerns: {', '.join(skin_concerns)}.
 """
 
-        # Add profile data if available
-        if user_profile:
-            # Safely get skin_concerns and sensitivities as lists
-            skin_concerns_list = []
-            if 'skin_concerns' in user_profile:
-                if isinstance(user_profile['skin_concerns'], list):
-                    skin_concerns_list = user_profile['skin_concerns']
-                elif isinstance(user_profile['skin_concerns'], str):
-                    try:
-                        skin_concerns_list = json.loads(user_profile['skin_concerns'])
-                    except:
-                        skin_concerns_list = []
-            
-            sensitivities_list = []
-            if 'sensitivities' in user_profile:
-                if isinstance(user_profile['sensitivities'], list):
-                    sensitivities_list = user_profile['sensitivities']
-                elif isinstance(user_profile['sensitivities'], str):
-                    try:
-                        sensitivities_list = json.loads(user_profile['sensitivities'])
-                    except:
-                        sensitivities_list = []
-            
-            profile_prompt = f"""
+        # Add detailed user profile data for all subscription tiers
+        profile_prompt = """
 USER PROFILE:
-Skin Type: {user_profile.get('skin_type', 'Not specified')}
-Skin Concerns: {', '.join(skin_concerns_list) if skin_concerns_list else 'Not specified'}
-Sensitivities/Allergies: {', '.join(sensitivities_list) if sensitivities_list else 'None'}
-Climate: {user_profile.get('climate', 'Not specified')}
 """
-            base_prompt += profile_prompt
+        # Personal Info & Environment
+        if profile_data.get('age'):
+            profile_prompt += f"Age: {profile_data.get('age')}\n"
+            
+        if profile_data.get('gender'):
+            profile_prompt += f"Gender: {profile_data.get('gender')}\n"
+            
+        if profile_data.get('is_pregnant') is not None:
+            profile_prompt += f"Pregnancy Status: {'Pregnant' if profile_data.get('is_pregnant') else 'Not Pregnant'}\n"
+            
+        if profile_data.get('fitzpatrick_type'):
+            profile_prompt += f"Fitzpatrick Skin Type: {profile_data.get('fitzpatrick_type')}\n"
+            
+        if profile_data.get('climate'):
+            profile_prompt += f"Climate: {profile_data.get('climate')}\n"
+        
+        # Skin Characteristics
+        if profile_data.get('skin_type'):
+            profile_prompt += f"Skin Type: {profile_data.get('skin_type')}\n"
+            
+        if profile_data.get('breakout_frequency'):
+            profile_prompt += f"Breakout Frequency: {profile_data.get('breakout_frequency')}\n"
+            
+        if profile_data.get('skin_texture'):
+            textures = profile_data.get('skin_texture', [])
+            if isinstance(textures, list) and textures:
+                profile_prompt += f"Skin Texture: {', '.join(textures)}\n"
+                
+        if profile_data.get('skin_redness'):
+            profile_prompt += f"Skin Redness: {profile_data.get('skin_redness')}\n"
+            
+        if profile_data.get('end_of_day_skin_feel'):
+            profile_prompt += f"End-of-day Skin Feel: {profile_data.get('end_of_day_skin_feel')}\n"
+        
+        # Skin Concerns & Preferences
+        if profile_data.get('preferred_textures'):
+            textures = profile_data.get('preferred_textures', [])
+            if isinstance(textures, list) and textures:
+                profile_prompt += f"Preferred Product Textures: {', '.join(textures)}\n"
+                
+        if profile_data.get('preferred_routine_length'):
+            profile_prompt += f"Preferred Routine Length: {profile_data.get('preferred_routine_length')}\n"
+            
+        if profile_data.get('preferred_product_types'):
+            types = profile_data.get('preferred_product_types', [])
+            if isinstance(types, list) and types:
+                profile_prompt += f"Preferred Product Types: {', '.join(types)}\n"
+                
+        if profile_data.get('lifestyle_factors'):
+            factors = profile_data.get('lifestyle_factors', [])
+            if isinstance(factors, list) and factors:
+                profile_prompt += f"Lifestyle Factors Affecting Skin: {', '.join(factors)}\n"
+                
+        if profile_data.get('sensitivities'):
+            sensitivities = profile_data.get('sensitivities', [])
+            if isinstance(sensitivities, list) and sensitivities:
+                profile_prompt += f"Sensitivities/Allergies: {', '.join(sensitivities)}\n"
+        
+        base_prompt += profile_prompt
 
         # Add ingredient preferences
         if preferred_ingredients:
@@ -198,35 +298,83 @@ Please provide:
 5. Brief explanation of the key active ingredients and their benefits
 6. Step-by-step manufacturing instructions
 7. Expected texture and sensory properties
+8. Specific details on how this formula addresses the user's skin concerns and preferences
+9. Consideration for the user's skin type, texture, and lifestyle factors
+10. Anticipated benefits and results
 
 Format the response as follows:
 - FORMULA NAME: [Name]
 - DESCRIPTION: [Description]
 - INGREDIENTS: [List each ingredient with percentage, INCI name, and phase]
 - MANUFACTURING STEPS: [Numbered list of steps]
-- NOTES: [Any additional notes about usage, stability, etc.]
+- BENEFITS & RESULTS: [Description of expected benefits]
+- USAGE RECOMMENDATIONS: [How to use the product]
+- NOTES: [Any additional notes about stability, storage, etc.]
 """
             return base_prompt + premium_prompt
             
         # Professional tier prompt
         elif user_subscription == models.SubscriptionType.PROFESSIONAL:
-            # Get brand info from professional data
-            brand_name = professional_data.get('brand_name', 'Not specified') if professional_data else 'Not specified'
-            target_audience = professional_data.get('target_audience', 'Not specified') if professional_data else 'Not specified'
-            target_markets = ', '.join(professional_data.get('target_markets', [])) if professional_data and professional_data.get('target_markets') else 'Global'
-            brand_positioning = professional_data.get('brand_positioning', 'Not specified') if professional_data else 'Not specified'
+            # Prepare professional data fields
+            brand_name = professional_data.get('brand_name', 'Not specified')
+            development_stage = professional_data.get('development_stage', 'Not specified')
+            product_category = professional_data.get('product_category', 'Not specified')
+            target_demographic = professional_data.get('target_demographic', 'Not specified')
+            
+            sales_channels = professional_data.get('sales_channels', [])
+            if isinstance(sales_channels, list) and sales_channels:
+                sales_channels_str = ', '.join(sales_channels)
+            else:
+                sales_channels_str = 'Not specified'
+                
+            target_texture = professional_data.get('target_texture', 'Not specified')
+            
+            performance_goals = professional_data.get('performance_goals', [])
+            if isinstance(performance_goals, list) and performance_goals:
+                performance_goals_str = ', '.join(performance_goals)
+            else:
+                performance_goals_str = 'Not specified'
+                
+            certifications = professional_data.get('desired_certifications', [])
+            if isinstance(certifications, list) and certifications:
+                certifications_str = ', '.join(certifications)
+            else:
+                certifications_str = 'Not specified'
+                
+            regulatory = professional_data.get('regulatory_requirements', 'Not specified')
+            restricted = professional_data.get('restricted_ingredients', 'Not specified')
+            preferred_actives = professional_data.get('preferred_actives', 'Not specified')
+            production_scale = professional_data.get('production_scale', 'Not specified')
+            price_positioning = professional_data.get('price_positioning', 'Not specified')
+            competitor_brands = professional_data.get('competitor_brands', 'Not specified')
+            brand_voice = professional_data.get('brand_voice', 'Not specified')
+            inspirations = professional_data.get('product_inspirations', 'Not specified')
             
             professional_prompt = f"""
 This is for a PROFESSIONAL subscription user developing a commercial product.
 
-Brand Information:
+BRAND & BUSINESS INFORMATION:
 - Brand Name: {brand_name}
-- Target Audience: {target_audience}
-- Target Markets: {target_markets}
-- Brand Positioning: {brand_positioning}
+- Development Stage: {development_stage}
+- Product Category: {product_category}
+- Target Demographic: {target_demographic}
+- Sales Channels: {sales_channels_str}
+- Price Positioning: {price_positioning}
+- Competitor Brands: {competitor_brands}
+- Brand Voice: {brand_voice}
+- Product Inspirations: {inspirations}
+
+PRODUCT SPECIFICATIONS:
+- Target Texture/Experience: {target_texture}
+- Performance Goals: {performance_goals_str}
+- Desired Certifications: {certifications_str}
+- Regulatory Requirements: {regulatory}
+- Restricted Ingredients: {restricted}
+- Preferred Active Ingredients: {preferred_actives}
+- Production Scale: {production_scale}
 
 Please provide a commercial-grade formulation including:
-1. A market-appropriate name for the formula
+1. A market-appropriate name for the formula aligned with brand positioning
 2. Comprehensive product description with key claims
 3. Complete INCI list with precise percentages (totaling 100%)
 4. Full phase separation with manufacturing temperatures and conditions
@@ -237,10 +385,12 @@ Please provide a commercial-grade formulation including:
 9. Manufacturing scale-up considerations
 10. Marketing claim substantiation points
 11. Recommended testing protocols
+12. Shelf-life expectations and stability considerations
 
 Format the response as follows:
 - FORMULA NAME: [Name]
 - PRODUCT DESCRIPTION: [Description with key claims]
+- TARGET MARKET POSITIONING: [Brief overview of market positioning]
 - FORMULA OVERVIEW: [Brief overview of formulation approach]
 - INGREDIENTS: [Detailed list with percentages, INCI names, phases, and functions]
 - MANUFACTURING PROCESS: [Detailed process with temperatures and equipment]
@@ -248,13 +398,25 @@ Format the response as follows:
 - REGULATORY CONSIDERATIONS: [pH, preservation, stability, claims support]
 - PACKAGING & SCALE-UP: [Recommendations for packaging and production]
 - TESTING PROTOCOLS: [Suggested tests for quality control]
-- MARKETING COPY: [Short marketing blurb aligned with brand voice]
+- MARKETING CLAIMS: [Substantiated claims aligned with brand voice]
+- SHELF-LIFE & STABILITY: [Expected shelf-life and stability considerations]
 """
             return base_prompt + professional_prompt
             
-        # Default prompt (should not be reached with current implementation)
+        # Free tier (should not be reached with current implementation)
         else:
-            return base_prompt + "\nPlease provide a basic formulation with ingredients and steps."
+            basic_prompt = """
+Please provide a basic formulation that includes:
+1. A simple name for the formula
+2. A list of ingredients with approximate percentages
+3. Basic manufacturing steps
+
+Format the response as follows:
+- FORMULA NAME: [Name]
+- INGREDIENTS: [List ingredients with percentages]
+- MANUFACTURING STEPS: [Basic steps]
+"""
+            return base_prompt + basic_prompt
     
     def _parse_formula_response(self, ai_response: str, product_type: str) -> Dict[str, Any]:
         """
@@ -268,6 +430,7 @@ Format the response as follows:
         formula_data = {
             "name": f"AI-Generated {product_type.title()}",
             "description": "",
+            "type": product_type.title(),  # Set formula type from product_type
             "ingredients": [],
             "steps": []
         }
@@ -399,7 +562,44 @@ Format the response as follows:
         
         # If no ingredients or steps were parsed, fall back to rule-based generation
         if not formula_data["ingredients"] or not formula_data["steps"]:
-            # You might want to handle this differently, e.g., by using the rule-based generator
-            pass
+            # Log fallback to rule-based generator
+            print("OpenAI parsing failed to extract ingredients or steps. Falling back to rule-based generator.")
+            
+            # Fall back to rule-based generator
+            try:
+                rule_based_formula = self.rule_based_generator.generate_formula(
+                    product_type,
+                    [],  # Empty skin concerns, will use defaults
+                    models.SubscriptionType.PREMIUM,  # Use premium tier for better quality
+                    [],  # No preferred ingredients
+                    []   # No avoided ingredients
+                )
+                
+                # Extract the proper attributes from the rule_based_formula
+                if hasattr(rule_based_formula, 'ingredients'):
+                    # For ingredients, we need to extract the correct fields
+                    formula_data["ingredients"] = [
+                        {
+                            "ingredient_id": ingredient.ingredient_id, 
+                            "percentage": ingredient.percentage, 
+                            "order": ingredient.order
+                        }
+                        for ingredient in rule_based_formula.ingredients
+                    ]
+                
+                if hasattr(rule_based_formula, 'steps'):
+                    # For steps, we need to extract the correct fields
+                    formula_data["steps"] = [
+                        {
+                            "description": step.description, 
+                            "order": step.order
+                        }
+                        for step in rule_based_formula.steps
+                    ]
+            except Exception as e:
+                # Log the error but continue with whatever we have
+                print(f"Error in rule-based fallback: {str(e)}")
+                import traceback
+                print(traceback.format_exc())
         
         return formula_data

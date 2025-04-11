@@ -167,12 +167,13 @@ class AIFormulaGenerator:
         )
         
         # Step 2: Select active ingredients based on skin concerns
+        # CHANGE HERE: Access ingredient_id using dot notation instead of dictionary notation
         active_ingredients = self._select_active_ingredients(
             skin_concerns,
             ingredients_by_phase,
             preferred_ingredients,
             avoided_ingredients,
-            already_selected=[i["ingredient_id"] for i in base_ingredients]
+            already_selected=[i.ingredient_id for i in base_ingredients]  # Changed from i["ingredient_id"]
         )
         
         # Step 3: Combine and adjust percentages
@@ -255,13 +256,13 @@ class AIFormulaGenerator:
         return selected_ingredients
     
     def _select_active_ingredients(
-        self,
-        skin_concerns: List[str],
-        ingredients_by_phase: Dict[str, List[models.Ingredient]],
-        preferred_ingredients: List[int],
-        avoided_ingredients: List[int],
-        already_selected: List[int]
-    ) -> List[schemas.FormulaIngredientCreate]:
+    self,
+    skin_concerns: List[str],
+    ingredients_by_phase: Dict[str, List[models.Ingredient]],
+    preferred_ingredients: List[int],
+    avoided_ingredients: List[int],
+    already_selected: List[int]
+) -> List[schemas.FormulaIngredientCreate]:
         """
         Select active ingredients based on skin concerns.
         """
@@ -324,7 +325,6 @@ class AIFormulaGenerator:
                 already_selected.append(function_ingredients[0].id)
         
         return selected_ingredients
-    
     def _adjust_percentages(
         self,
         ingredients: List[schemas.FormulaIngredientCreate],
