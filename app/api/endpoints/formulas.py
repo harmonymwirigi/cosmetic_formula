@@ -6,6 +6,9 @@ from app.utils.response_formatter import format_formula_response
 from app import crud, models, schemas
 from app.database import get_db
 from app.auth import get_current_user
+import logging
+from app import utils
+from app.utils import response_formatter
 
 router = APIRouter()
 
@@ -190,7 +193,6 @@ def update_formula_steps(
     # Return formatted formula response
     return utils.response_formatter.format_formula_response(formula, db)
 
-
 @router.get("/read_formulas", response_model=List[schemas.FormulaList])
 def read_formulas(
     skip: int = 0,
@@ -228,7 +230,74 @@ def read_formulas(
         
         formatted_formulas.append(formatted_formula)
     
+    # Check if user has approached their formula limit
+    check_formula_quota_and_notify(db, current_user)
+    
     return formatted_formulas
+def check_formula_quota_and_notify(db: Session, user: models.User):
+    """
+    Check if user is approaching their formula quota limit and send a notification if needed
+    """
+    try:
+        # Import NotificationService
+        from app.services.notification_service import NotificationService, NotificationData
+        
+        # Get total formula count
+        formula_count = db.query(models.Formula).filter(models.Formula.user_id == user.id).count()
+        
+        # Get maximum formula limit based on subscription type
+        subscription_type = user.subscription_type
+        max_formulas = get_formula_limit_by_subscription(subscription_type)
+        
+        # Skip for unlimited plans
+        if max_formulas == float('inf'):
+            return
+        
+        # Calculate threshold for warning (80% of limit)
+        threshold = int(max_formulas * 0.8)
+        
+        # Check if user has already been notified
+        notification_service = NotificationService(db)
+        existing_notifications = notification_service.get_recent_notifications_by_type(
+            user_id=user.id,
+            notification_type="subscription",
+            hours=24,  # Only check notifications from the last 24 hours
+            title_contains="Formula Limit"
+        )
+        
+        # Only send if approaching limit (between 80% and 99%) and no recent notification exists
+        if formula_count >= threshold and formula_count < max_formulas and not existing_notifications:
+            # Calculate remaining formulas
+            remaining = max_formulas - formula_count
+            
+            # Create notification
+            notification_data = NotificationData(
+                user_id=user.id,
+                title="Formula Limit Approaching",
+                message=f"You have used {formula_count} out of {max_formulas} formulas allowed in your {subscription_type} plan. You have {remaining} formula(s) remaining. Consider upgrading your subscription for unlimited formulas.",
+                notification_type="subscription",
+                reference_id=None
+            )
+            
+            # Save notification
+            notification_service.create_notification(notification_data)
+            
+            # Log for debugging
+            logger.info(f"Created quota notification for user {user.id}: {formula_count}/{max_formulas} formulas used")
+        
+    except Exception as e:
+        # Log error but don't disrupt the main functionality
+        logger.error(f"Error checking formula quota: {str(e)}")
+
+# Helper function to get formula limit based on subscription type
+def get_formula_limit_by_subscription(subscription_type: str) -> int:
+    """Return the maximum number of formulas allowed for a subscription type"""
+    limits = {
+        "free": 3,
+        "premium": 30,
+        "professional": float('inf')  # Unlimited
+    }
+    return limits.get(subscription_type.lower(), 3)  # Default to free tier limit if unknown
 @router.get("/{formula_id}", response_model=None)
 def read_formula(
     formula_id: int,
@@ -315,6 +384,9 @@ def read_formula(
             for step in formula.steps
         ]
     }
+
+# Add this to your formulas.py file
+
 @router.post("/create_formula", response_model=None)
 def create_formula(
     formula: schemas.FormulaCreate,
@@ -324,10 +396,26 @@ def create_formula(
     """
     Create a new formula.
     """
+    # Import notification utility
+    from app.utils.notification_utils import notify_formula_creation, notify_formula_quota
+    
     # Check if user has reached formula limit (for free accounts)
     if current_user.subscription_type == models.SubscriptionType.FREE:
         formula_count = db.query(models.Formula).filter(models.Formula.user_id == current_user.id).count()
-        if formula_count >= 3:
+        max_formulas = 3  # Free plan limit
+        
+        # Send quota notification if at or above 80% of limit
+        if formula_count >= int(max_formulas * 0.8):
+            notify_formula_quota(
+                db=db,
+                user_id=current_user.id,
+                subscription_type=current_user.subscription_type,
+                formula_count=formula_count,
+                max_formulas=max_formulas
+            )
+        
+        # Check if limit is reached
+        if formula_count >= max_formulas:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Free accounts are limited to 3 formulas. Please upgrade your subscription."
@@ -335,6 +423,14 @@ def create_formula(
     
     # Create the formula in the database
     db_formula = crud.create_formula(db=db, formula=formula, user_id=current_user.id)
+    
+    # Send notification about formula creation
+    notify_formula_creation(
+        db=db,
+        user_id=current_user.id,
+        formula_id=db_formula.id,
+        formula_name=db_formula.name
+    )
     
     # Get a fresh copy of the formula with all relationships loaded
     formula_with_details = db.query(models.Formula).filter(models.Formula.id == db_formula.id).first()

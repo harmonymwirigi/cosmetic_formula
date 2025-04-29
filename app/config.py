@@ -9,7 +9,7 @@ load_dotenv(dotenv_path=env_path)
 
 class Settings:
     # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./app.db")
+    DATABASE_URL: str = os.getenv("postgres://postgres.fjdlhdnwsfgxkirkxynl:JWYJzoejzNmBqzGt@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require&supa=base-pooler.x")
     print("Database URL:", DATABASE_URL)  # Debugging line to check the database URL
     # Authentication
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your_super_secret_key_change_this_in_production")
@@ -38,3 +38,37 @@ class Settings:
         env_file = ".env"
 
 settings = Settings()
+
+# Subscription configuration
+SUBSCRIPTION_PLANS = {
+    "free": {
+        "name": "Free",
+        "price": 0,
+        "formulas_per_month": 3,
+        "features": [
+            "AI Formula Generation",
+            "Basic Formula Management"
+        ]
+    },
+    "creator": {
+        "name": "Creator",
+        "price": 19.99,
+        "formulas_per_month": 30,
+        "features": [
+            "AI Formula Generation",
+            "PDF & Notion Export",
+            "Formula Sharing"
+        ]
+    },
+    "pro_lab": {
+        "name": "Pro Lab",
+        "price": 49.99,
+        "formulas_per_month": float('inf'),  # Unlimited
+        "features": [
+            "Unlimited Formulas",
+            "SOP & SDS Generation",
+            "Regulatory Features",
+            "Priority Support"
+        ]
+    }
+}

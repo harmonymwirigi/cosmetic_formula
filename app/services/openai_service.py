@@ -436,7 +436,6 @@ Format the response as follows:
         }
         
         # Parse name
-        name_match = None
         if "FORMULA NAME:" in ai_response:
             name_sections = ai_response.split("FORMULA NAME:")
             if len(name_sections) > 1:
@@ -445,7 +444,6 @@ Format the response as follows:
                     formula_data["name"] = name_line
         
         # Parse description
-        description_match = None
         for header in ["DESCRIPTION:", "PRODUCT DESCRIPTION:"]:
             if header in ai_response:
                 desc_sections = ai_response.split(header)
@@ -492,23 +490,48 @@ Format the response as follows:
                         if name_part.startswith("-") or name_part.startswith("•"):
                             name_part = name_part[1:].strip()
                         
-                        # Try to identify ingredient in database
-                        # This is simplified - you might need more complex matching
-                        ingredient = self.db.query(models.Ingredient).filter(
-                            models.Ingredient.name.ilike(f"%{name_part}%")
-                        ).first()
+                        # For INCI name, extract from parentheses if available
+                        inci_name = name_part
+                        inci_match = None
+                        if "(" in name_part and ")" in name_part:
+                            inci_match = name_part.split("(")[1].split(")")[0].strip()
+                            if inci_match:
+                                inci_name = inci_match
+                                # Clean up the name part to remove the INCI part in parentheses
+                                name_part = name_part.split("(")[0].strip()
                         
-                        if ingredient:
-                            formula_data["ingredients"].append({
-                                "ingredient_id": ingredient.id,
-                                "percentage": percentage,
-                                "order": ingredient_order
-                            })
-                            ingredient_order += 1
-                    except ValueError:
+                        # Create a new ingredient on-the-fly for every ingredient
+                        new_ingredient = models.Ingredient(
+                            name=name_part,
+                            inci_name=inci_name,
+                            description=f"AI-generated ingredient for {product_type}",
+                            phase="AI Generated",
+                            recommended_max_percentage=percentage * 1.2,  # Set a slightly higher max percentage
+                            function="AI Generated",
+                            is_premium=False,
+                            is_professional=False
+                        )
+                        
+                        # Add to database
+                        self.db.add(new_ingredient)
+                        self.db.commit()
+                        self.db.refresh(new_ingredient)
+                        
+                        # Add to formula
+                        formula_data["ingredients"].append({
+                            "ingredient_id": new_ingredient.id,
+                            "percentage": percentage,
+                            "order": ingredient_order
+                        })
+                        ingredient_order += 1
+                    except ValueError as e:
+                        print(f"Error parsing ingredient line: {line}. Error: {str(e)}")
+                        continue
+                    except Exception as e:
+                        print(f"Unexpected error adding ingredient {name_part}: {str(e)}")
                         continue
         
-        # Parse steps
+        # Parse steps - This part remains mostly unchanged
         steps_section = None
         for header in ["MANUFACTURING STEPS:", "MANUFACTURING PROCESS:", "PROCESS:"]:
             if header in ai_response:

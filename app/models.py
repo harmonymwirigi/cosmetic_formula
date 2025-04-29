@@ -6,7 +6,9 @@ from .database import Base
 import uuid
 from datetime import datetime
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Float, Text, DateTime, Enum, Table, JSON
-
+# Import Pydantic's BaseModel
+from pydantic import BaseModel as PydanticBaseModel
+from typing import Optional, List
 # Many-to-many relationship between formulas and ingredients
 formula_ingredients = Table(
     "formula_ingredients",
@@ -29,6 +31,10 @@ class User(Base):
     first_name = Column(String, nullable=False)
     last_name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
+    phone_number = Column(String, unique=True, nullable=True)  # New field
+    is_phone_verified = Column(Boolean, default=False)  # New field
+    phone_verification_code = Column(String, nullable=True)  # New field
+    phone_verification_expiry = Column(DateTime, nullable=True)  # New field
     hashed_password = Column(String, nullable=False)
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
@@ -369,6 +375,8 @@ class Order(Base):
     user = relationship("User")
     items = relationship("OrderItem", back_populates="order")
     shipping_address = relationship("ShippingAddress")
+
+
 
 class OrderItem(Base):
     __tablename__ = "order_items"

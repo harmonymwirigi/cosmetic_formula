@@ -10,6 +10,7 @@ from app.services.ai_formula import AIFormulaGenerator
 from app.services.openai_service import OpenAIFormulaGenerator
 from app.utils.response_formatter import format_formula_response
 
+from datetime import datetime
 router = APIRouter()
 
 # In backend/app/api/endpoints/ai_formula.py
@@ -24,28 +25,33 @@ async def generate_formula(
     """
     Generate a formula using AI based on user preferences and profile.
     
-    Free users cannot access this endpoint.
-    Premium users have limited generations.
-    Professional users have unlimited generations and additional options.
+    All users can access this endpoint, but monthly limits apply based on subscription.
     """
     # Add detailed logging 
     print(f"Received formula generation request type: {formula_request.product_type}")
     
-    # Check subscription tier - restrict AI formula to premium/professional
+    # Check user's monthly formula count
+    current_month_start = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    
+    formula_count = db.query(models.Formula).filter(
+        models.Formula.user_id == current_user.id,
+        models.Formula.created_at >= current_month_start
+    ).count()
+    
+    # Get formula limit based on subscription
     if current_user.subscription_type == models.SubscriptionType.FREE:
+        formula_limit = 3
+    elif current_user.subscription_type == models.SubscriptionType.CREATOR:
+        formula_limit = 30
+    else:  # PRO_LAB
+        formula_limit = float('inf')  # Unlimited
+    
+    # Check if limit is reached
+    if formula_count >= formula_limit:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="AI formula generation requires a Premium or Professional subscription."
+            detail=f"You've reached your monthly limit of {formula_limit} formulas for your {current_user.subscription_type.value} plan. Upgrade for more formulas."
         )
-    
-    # Check if user has reached formula limit (for premium accounts)
-    if current_user.subscription_type == models.SubscriptionType.PREMIUM:
-        formula_count = db.query(models.Formula).filter(models.Formula.user_id == current_user.id).count()
-        if formula_count >= 10:  # Adjust the limit for premium users
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Premium accounts are limited to 10 AI-generated formulas per month. Please upgrade to Professional for unlimited formulas."
-            )
     
     # Get user profile or create one if it doesn't exist
     user_profile = db.query(models.UserProfile).filter(

@@ -160,7 +160,7 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
                 is_verified=True,
                 needs_subscription=True  # Set needs_subscription flag
             )
-            
+            user.is_phone_verified = False
             # Add to database and commit
             db.add(user)
             db.commit()
@@ -174,15 +174,15 @@ async def auth_callback(request: Request, db: Session = Depends(get_db)):
                 db.commit()
                 db.refresh(user)
         
+        needs_phone_verification = not user.is_phone_verified
+    
         # Create access token
         access_token = create_access_token(data={"sub": str(user.id)})
-        
         # Always redirect to the OAuth callback route, not the original path
         frontend_url = settings.FRONTEND_URL
-        redirect_url = f"{frontend_url}/oauth/callback?token={access_token}&user_id={user.id}"
-        
+        # Include phone verification status in redirect
+        redirect_url = f"{frontend_url}/oauth/callback?token={access_token}&user_id={user.id}&needs_phone_verification={needs_phone_verification}"
         print(f"Redirecting to: {redirect_url}")
-        
         return RedirectResponse(url=redirect_url)
     
     except Exception as e:

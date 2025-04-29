@@ -7,7 +7,10 @@ from app.database import get_db
 from app.auth import get_current_user
 from pydantic import BaseModel
 from datetime import datetime
-
+class OrderCreate(BaseModel):
+    shipping_address_id: int
+    payment_method: str
+    notes: Optional[str] = None
 router = APIRouter()
 
 # Pydantic schemas for request/response (add to schemas.py)
@@ -379,9 +382,7 @@ async def remove_from_cart(
 # Order Endpoints
 @router.post("/orders", response_model=dict)
 async def create_order(
-   shipping_address_id: int,
-   payment_method: str,
-   notes: Optional[str] = None,
+   order_data: OrderCreate,
    db: Session = Depends(get_db),
    current_user: models.User = Depends(get_current_user)
 ):
@@ -399,7 +400,7 @@ async def create_order(
    
    # Validate shipping address
    shipping_address = db.query(models.ShippingAddress).filter(
-       models.ShippingAddress.id == shipping_address_id,
+       models.ShippingAddress.id == order_data.shipping_address_id,  # Use order_data.shipping_address_id
        models.ShippingAddress.user_id == current_user.id
    ).first()
    
@@ -458,9 +459,9 @@ async def create_order(
        tax=tax,
        shipping_fee=shipping_fee,
        total_amount=total_amount,
-       payment_method=payment_method,
-       shipping_address_id=shipping_address_id,
-       notes=notes
+       payment_method=order_data.payment_method,  # Use order_data.payment_method
+       shipping_address_id=order_data.shipping_address_id,  # Use order_data.shipping_address_id
+       notes=order_data.notes  # Use order_data.notes
    )
    
    db.add(order)
@@ -657,8 +658,51 @@ async def create_shipping_address(
    db.commit()
    db.refresh(new_address)
    
-   return new_address
+   # Convert the SQLAlchemy model to a dictionary
+   return {
+       "id": new_address.id,
+       "user_id": new_address.user_id,
+       "first_name": new_address.first_name,
+       "last_name": new_address.last_name,
+       "address_line1": new_address.address_line1,
+       "address_line2": new_address.address_line2,
+       "city": new_address.city,
+       "state": new_address.state,
+       "postal_code": new_address.postal_code,
+       "country": new_address.country,
+       "phone_number": new_address.phone_number,
+       "is_default": new_address.is_default
+   }
 
+@router.get("/shipping-addresses", response_model=List[dict])
+async def get_shipping_addresses(
+   db: Session = Depends(get_db),
+   current_user: models.User = Depends(get_current_user)
+):
+   """Get shipping addresses for the current user"""
+   addresses = db.query(models.ShippingAddress).filter(
+       models.ShippingAddress.user_id == current_user.id
+   ).all()
+   
+   # Convert SQLAlchemy models to dictionaries
+   result = []
+   for address in addresses:
+       result.append({
+           "id": address.id,
+           "user_id": address.user_id,
+           "first_name": address.first_name,
+           "last_name": address.last_name,
+           "address_line1": address.address_line1,
+           "address_line2": address.address_line2,
+           "city": address.city,
+           "state": address.state,
+           "postal_code": address.postal_code,
+           "country": address.country,
+           "phone_number": address.phone_number,
+           "is_default": address.is_default
+       })
+   
+   return result
 @router.put("/shipping-addresses/{address_id}", response_model=dict)
 async def update_shipping_address(
    address_id: int,

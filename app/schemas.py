@@ -7,16 +7,25 @@ from enum import Enum
 # Enum for subscription types
 class SubscriptionType(str, Enum):
     FREE = "free"
-    PREMIUM = "premium"
-    PROFESSIONAL = "professional"
+    CREATOR = "creator"
+    PRO_LAB = "pro_lab"
 class SubscriptionUpdate(BaseModel):
     subscription_type: str
+class MessageResponse(BaseModel):
+    message: str
+class PhoneVerificationRequest(BaseModel):
+    phone_number: str
+
+class PhoneVerificationCode(BaseModel):
+    phone_number: str
+    code: str
+
 # User schemas
 class UserBase(BaseModel):
     email: EmailStr
     first_name: str
     last_name: str
-
+    phone_number: Optional[str] = None
 class UserCreate(UserBase):
     password: str
     confirm_password: str
@@ -25,6 +34,14 @@ class UserCreate(UserBase):
     def passwords_match(cls, v, values, **kwargs):
         if 'password' in values and v != values['password']:
             raise ValueError('Passwords do not match')
+        return v
+
+    @validator('phone_number')
+    def validate_phone(cls, v):
+        if v:
+            # Simple validation - can be more complex
+            if not re.match(r'^\+?[1-9]\d{1,14}$', v):
+                raise ValueError('Invalid phone number format')
         return v
 
 class UserLogin(BaseModel):
@@ -201,6 +218,7 @@ class FormulaStepsUpdate(BaseModel):
 
 
 # Notification schemas
+# Notification schemas
 class NotificationBase(BaseModel):
     title: str
     message: str
@@ -217,7 +235,7 @@ class NotificationRead(NotificationBase):
     created_at: datetime
     
     class Config:
-        from_attributes = True
+        orm_mode = True
 
 # Notification preference schemas
 class NotificationPreferenceBase(BaseModel):
@@ -235,7 +253,19 @@ class NotificationPreferenceRead(NotificationPreferenceBase):
     user_id: int
     
     class Config:
-        from_attributes = True
+        orm_mode = True
+
+# Response models for notification endpoints
+class NotificationResponse(BaseModel):
+    success: bool
+    message: Optional[str] = None
+    data: Optional[Any] = None
+
+class NotificationPreferencesResponse(BaseModel):
+    system: Optional[Dict[str, bool]] = None
+    formula: Optional[Dict[str, bool]] = None
+    subscription: Optional[Dict[str, bool]] = None
+    order: Optional[Dict[str, bool]] = None
 
 # backend/app/schemas.py (Updated UserProfile section)
 

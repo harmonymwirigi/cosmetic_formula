@@ -73,7 +73,12 @@ try:
     app.include_router(oauth_router, prefix="/api/auth", tags=["authentication"])
 except ImportError:
     print("Warning: Google OAuth router not found, skipping...")
-
+# Add this near the other router imports in main.py
+try:
+    from app.api.endpoints import auth as auth_endpoints
+    app.include_router(auth_endpoints.router, prefix="/api/auth", tags=["authentication"])
+except ImportError:
+    print("Warning: Auth endpoints not found, skipping...")
 try:
     from app.api.endpoints import user_profile
     app.include_router(user_profile.router, prefix="/api/user", tags=["user"])
@@ -107,6 +112,12 @@ try:
     app.include_router(formulas.router, prefix="/api/formulas", tags=["formulas"])
 except ImportError:
     print("Warning: Formulas endpoints not found, skipping...")
+
+try:
+    from app.api.endpoints import export
+    app.include_router(export.router, prefix="/api/export", tags=["export"])
+except ImportError:
+    print("Warning: Export endpoints not found, skipping...")   
 
 try:
     from app.api.endpoints import notifications
