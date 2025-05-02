@@ -1,6 +1,6 @@
 # backend/app/schemas.py
 from pydantic import BaseModel, EmailStr, validator, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 from enum import Enum
 
@@ -9,8 +9,94 @@ class SubscriptionType(str, Enum):
     FREE = "free"
     CREATOR = "creator"
     PRO_LAB = "pro_lab"
+
+# This matches your models.py SubscriptionType but also supports frontend names
+class SubscriptionTypeEnum(str, Enum):
+    FREE = "free"
+    PREMIUM = "premium"
+    PROFESSIONAL = "professional"
+    # Add these for frontend compatibility
+    CREATOR = "creator"  # Maps to PREMIUM in backend
+    PRO_LAB = "pro_lab"  # Maps to PROFESSIONAL in backend
+# Schemas for subscription management
 class SubscriptionUpdate(BaseModel):
+    subscription_type: SubscriptionTypeEnum
+
+class SubscriptionCreate(BaseModel):
     subscription_type: str
+    billing_cycle: str = "monthly"  # "monthly" or "annual"
+    payment_method_id: Optional[str] = None
+
+class SubscriptionStatusResponse(BaseModel):
+    subscription_type: str
+    is_active: bool
+    expires_at: Optional[datetime] = None
+    billing_cycle: Optional[str] = None
+    payment_method: Optional[str] = None
+    next_billing_date: Optional[datetime] = None
+    auto_renew: bool = True
+    features: Dict[str, Any]
+    formula_limit: Any  # Can be int or "unlimited"
+    formula_count: int
+    formula_percentage: float
+
+class SubscriptionCancelRequest(BaseModel):
+    reason: Optional[str] = None
+    feedback: Optional[str] = None
+
+class SubscriptionFeatures(BaseModel):
+    max_formulas: Any  # int or "unlimited"
+    ingredient_access: str
+    ai_recommendations: str
+    export_formats: List[str]
+    formula_analysis: bool
+    formula_version_history: bool
+    premium_support: bool
+    custom_branding: bool
+
+class SubscriptionPlan(BaseModel):
+    plan_id: str
+    name: str
+    description: str
+    monthly_price: float
+    annual_price: float
+    features: SubscriptionFeatures
+    popular: bool = False
+
+class SubscriptionPlansResponse(BaseModel):
+    current_plan: str
+    plans: Dict[str, SubscriptionPlan]
+
+# Schemas for payment processing
+class CheckoutSessionRequest(BaseModel):
+    subscription_type: str
+    billing_cycle: str = "monthly"  # "monthly" or "annual"
+
+class CheckoutSessionResponse(BaseModel):
+    checkout_url: str
+    session_id: str
+    subscription_type: str
+    billing_cycle: str
+
+class VerifySessionRequest(BaseModel):
+    session_id: str
+    subscription_type: Optional[str] = None
+
+class VerifySessionResponse(BaseModel):
+    success: bool
+    message: str
+    subscription_type: Optional[str] = None
+    subscription_expires_at: Optional[datetime] = None
+
+# Schemas for usage tracking
+class FormulaUsageResponse(BaseModel):
+    formula_count: int
+    formula_limit: Union[int, str]
+    percentage_used: float
+    status: str
+    subscription_type: str
+    can_create_more: bool
+
 class MessageResponse(BaseModel):
     message: str
 class PhoneVerificationRequest(BaseModel):
@@ -23,10 +109,13 @@ class PhoneVerificationCode(BaseModel):
 # User schemas
 class UserBase(BaseModel):
     email: EmailStr
+    is_active: bool = True
+    subscription_type: SubscriptionTypeEnum = SubscriptionTypeEnum.FREE
+    needs_subscription: bool = True
+
+class UserCreate(UserBase):
     first_name: str
     last_name: str
-    phone_number: Optional[str] = None
-class UserCreate(UserBase):
     password: str
     confirm_password: str
 
@@ -34,14 +123,6 @@ class UserCreate(UserBase):
     def passwords_match(cls, v, values, **kwargs):
         if 'password' in values and v != values['password']:
             raise ValueError('Passwords do not match')
-        return v
-
-    @validator('phone_number')
-    def validate_phone(cls, v):
-        if v:
-            # Simple validation - can be more complex
-            if not re.match(r'^\+?[1-9]\d{1,14}$', v):
-                raise ValueError('Invalid phone number format')
         return v
 
 class UserLogin(BaseModel):
@@ -53,6 +134,18 @@ class UserUpdate(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    confirm_password: Optional[str] = None
+    is_active: Optional[bool] = None
+    subscription_type: Optional[SubscriptionTypeEnum] = None
+    needs_subscription: Optional[bool] = None
+
+    @validator('confirm_password')
+    def passwords_match(cls, v, values, **kwargs):
+        if 'password' in values and v and v != values['password']:
+            raise ValueError('Passwords do not match')
+        return v
+
 
 class UserInDB(UserBase):
     id: int
@@ -66,8 +159,17 @@ class UserInDB(UserBase):
     class Config:
         from_attributes = True
 
-class User(UserInDB):
-    pass
+class User(UserBase):
+    id: int
+    first_name: str
+    last_name: str
+    is_verified: bool = False
+    subscription_expires_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
 
 # Token schemas
 class Token(BaseModel):

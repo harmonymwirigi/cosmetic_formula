@@ -283,11 +283,11 @@ def check_formula_quota_and_notify(db: Session, user: models.User):
             notification_service.create_notification(notification_data)
             
             # Log for debugging
-            logger.info(f"Created quota notification for user {user.id}: {formula_count}/{max_formulas} formulas used")
+            logging.info(f"Notification sent to user {user.id}: {notification_data.message}")
         
     except Exception as e:
         # Log error but don't disrupt the main functionality
-        logger.error(f"Error checking formula quota: {str(e)}")
+        logging.error(f"Error checking formula quota: {str(e)}")
 
 # Helper function to get formula limit based on subscription type
 def get_formula_limit_by_subscription(subscription_type: str) -> int:

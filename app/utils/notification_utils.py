@@ -1,157 +1,107 @@
 # backend/app/utils/notification_utils.py
-
-import logging
 from sqlalchemy.orm import Session
-from app import models
 from app.services.notification_service import NotificationService, NotificationData
-from typing import Optional
+import logging
 
 # Set up logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def notify_formula_quota(
-    db: Session, 
-    user_id: int, 
-    subscription_type: str, 
-    formula_count: int, 
+    db: Session,
+    user_id: int,
+    subscription_type: str,
+    formula_count: int,
     max_formulas: int
 ):
     """
-    Send a notification about formula quota usage
-    
-    Args:
-        db: Database session
-        user_id: User ID to notify
-        subscription_type: User's subscription type
-        formula_count: Current number of formulas
-        max_formulas: Maximum number of formulas allowed
+    Send a notification to the user about approaching their formula quota
     """
     try:
-        # Skip for unlimited plans
-        if max_formulas == float('inf'):
-            return
-        
-        # Calculate remaining formulas
-        remaining = max_formulas - formula_count
-        
-        # Create notification service
+        # Initialize notification service
         notification_service = NotificationService(db)
         
-        if formula_count >= max_formulas:
-            # User has reached their limit
-            notification_data = NotificationData(
-                user_id=user_id,
-                title="Formula Limit Reached",
-                message=f"You have reached your limit of {max_formulas} formulas with your {subscription_type} plan. Upgrade to create more formulas.",
-                notification_type="subscription",
-                reference_id=None
-            )
-        elif formula_count >= int(max_formulas * 0.8):
-            # User is approaching their limit (80% or more)
-            notification_data = NotificationData(
-                user_id=user_id,
-                title="Formula Limit Approaching",
-                message=f"You have used {formula_count} out of {max_formulas} formulas allowed in your {subscription_type} plan. You have {remaining} formula(s) remaining.",
-                notification_type="subscription",
-                reference_id=None
-            )
-        else:
-            # No notification needed
+        # Check if user has already been notified recently
+        existing_notifications = notification_service.get_recent_notifications_by_type(
+            user_id=user_id,
+            notification_type="subscription",
+            hours=24,  # Only check notifications from the last 24 hours
+            title_contains="Formula Limit"
+        )
+        
+        # Don't send duplicate notifications
+        if existing_notifications:
+            logger.info(f"Skipping quota notification for user {user_id} as one was recently sent")
             return
         
-        # Create the notification
-        notification = notification_service.create_notification(notification_data)
-        logger.info(f"Created formula quota notification for user {user_id}: {notification.title}")
+        # Create notification using service helper
+        notification_service.notify_formula_quota(
+            user_id=user_id,
+            formula_count=formula_count,
+            formula_limit=max_formulas,
+            subscription_type=subscription_type
+        )
         
+        logger.info(f"Created quota notification for user {user_id}: {formula_count}/{max_formulas} formulas used")
     except Exception as e:
-        logger.error(f"Error creating formula quota notification: {str(e)}")
-
-def notify_subscription_action(
-    db: Session, 
-    user_id: int, 
-    action_type: str,
-    details: Optional[dict] = None
-):
-    """
-    Send a notification about subscription-related events
-    
-    Args:
-        db: Database session
-        user_id: User ID to notify
-        action_type: Type of action (e.g., 'upgraded', 'renewed', 'canceled')
-        details: Optional details about the action
-    """
-    try:
-        notification_service = NotificationService(db)
-        
-        subscription_type = details.get('subscription_type', 'premium') if details else 'premium'
-        
-        if action_type == 'upgraded':
-            notification_data = NotificationData(
-                user_id=user_id,
-                title="Subscription Upgraded",
-                message=f"Your subscription has been upgraded to {subscription_type}. Enjoy your new features!",
-                notification_type="subscription",
-                reference_id=None
-            )
-        elif action_type == 'renewed':
-            renewal_date = details.get('renewal_date', 'next billing cycle') if details else 'next billing cycle'
-            notification_data = NotificationData(
-                user_id=user_id,
-                title="Subscription Renewed",
-                message=f"Your {subscription_type} subscription has been renewed until {renewal_date}.",
-                notification_type="subscription",
-                reference_id=None
-            )
-        elif action_type == 'canceled':
-            end_date = details.get('end_date', 'the end of your billing cycle') if details else 'the end of your billing cycle'
-            notification_data = NotificationData(
-                user_id=user_id,
-                title="Subscription Canceled",
-                message=f"Your {subscription_type} subscription has been canceled. You'll have access to premium features until {end_date}.",
-                notification_type="subscription",
-                reference_id=None
-            )
-        else:
-            # Unknown action type
-            return
-        
-        # Create the notification
-        notification = notification_service.create_notification(notification_data)
-        logger.info(f"Created subscription notification for user {user_id}: {notification.title}")
-        
-    except Exception as e:
-        logger.error(f"Error creating subscription notification: {str(e)}")
+        # Log error but don't disrupt the main functionality
+        logger.error(f"Error sending formula quota notification: {str(e)}")
 
 def notify_formula_creation(
-    db: Session, 
-    user_id: int, 
-    formula_id: int, 
+    db: Session,
+    user_id: int,
+    formula_id: int,
     formula_name: str
 ):
     """
-    Send a notification when a formula is created
-    
-    Args:
-        db: Database session
-        user_id: User ID to notify
-        formula_id: ID of the created formula
-        formula_name: Name of the created formula
+    Send a notification to the user about a new formula being created
     """
     try:
+        # Initialize notification service
         notification_service = NotificationService(db)
         
-        notification_data = NotificationData(
+        # Create notification using service helper
+        notification_service.notify_formula_creation(
             user_id=user_id,
-            title="Formula Created",
-            message=f"Your formula '{formula_name}' has been created successfully.",
-            notification_type="formula",
-            reference_id=formula_id
+            formula_id=formula_id,
+            formula_name=formula_name
         )
         
-        # Create the notification
-        notification = notification_service.create_notification(notification_data)
-        logger.info(f"Created formula creation notification for user {user_id}: {notification.title}")
-        
+        logger.info(f"Created formula creation notification for user {user_id}: Formula {formula_id}")
     except Exception as e:
-        logger.error(f"Error creating formula creation notification: {str(e)}")
+        # Log error but don't disrupt the main functionality
+        logger.error(f"Error sending formula creation notification: {str(e)}")
+
+def notify_subscription_change(
+    db: Session,
+    user_id: int,
+    new_subscription_type: str,
+    old_subscription_type: str
+):
+    """
+    Send a notification to the user about a subscription change
+    """
+    try:
+        # Initialize notification service
+        notification_service = NotificationService(db)
+        
+        # Create notification using service helper
+        notification_service.notify_subscription_change(
+            user_id=user_id,
+            new_subscription_type=new_subscription_type,
+            old_subscription_type=old_subscription_type
+        )
+        
+        logger.info(f"Created subscription change notification for user {user_id}: {old_subscription_type} -> {new_subscription_type}")
+    except Exception as e:
+        # Log error but don't disrupt the main functionality
+        logger.error(f"Error sending subscription change notification: {str(e)}")
+
+def get_formula_limit_by_subscription(subscription_type: str) -> int:
+    """Return the maximum number of formulas allowed for a subscription type"""
+    limits = {
+        "free": 3,
+        "creator": 30,
+        "pro_lab": float('inf')  # Unlimited
+    }
+    return limits.get(subscription_type.lower(), 3)  # Default to free tier limit if unknown

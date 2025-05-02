@@ -67,13 +67,13 @@ app.add_middleware(
 # Include authentication router
 app.include_router(auth_router, prefix="/api/auth", tags=["authentication"])
 
-# Try to include Google OAuth router
+# Try to include additional auth endpoints
 try:
-    from app.auth_google import oauth_router
-    app.include_router(oauth_router, prefix="/api/auth", tags=["authentication"])
-except ImportError:
-    print("Warning: Google OAuth router not found, skipping...")
-# Add this near the other router imports in main.py
+    from app.api.endpoints import auth as auth_endpoints
+    # Make sure to import the router directly from the module
+    app.include_router(auth_endpoints.router, prefix="/api", tags=["authentication"])
+except ImportError as e:
+    print(f"Warning: Auth endpoints not found, skipping... Error: {e}")
 try:
     from app.api.endpoints import auth as auth_endpoints
     app.include_router(auth_endpoints.router, prefix="/api/auth", tags=["authentication"])

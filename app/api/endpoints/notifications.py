@@ -153,3 +153,4 @@ async def update_notification_preferences(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update notification preferences"
         )
+    

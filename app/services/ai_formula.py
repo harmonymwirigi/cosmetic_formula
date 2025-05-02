@@ -2,7 +2,10 @@
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from app import models, schemas
+from app.utils.subscription_mapper import get_formula_limit, map_to_backend_type
+import logging
 
+logger = logging.getLogger(__name__)
 class FormulationRules:
     """
     Rules for cosmetic formulations based on product type and properties.
@@ -116,23 +119,39 @@ class AIFormulaGenerator:
         # Query ingredients based on subscription type
         query = self.db.query(models.Ingredient)
         
-        if user_subscription == models.SubscriptionType.FREE:
-            query = query.filter(
-                models.Ingredient.is_premium.is_(False),
-                models.Ingredient.is_professional.is_(False)
-            )
-        elif user_subscription == models.SubscriptionType.PREMIUM:
-            query = query.filter(models.Ingredient.is_professional.is_(False))
-        
-        all_ingredients = query.all()
-        
-        # Categorize by phase
-        for ingredient in all_ingredients:
-            phase = ingredient.phase or "Uncategorized"
-            if phase not in ingredients_by_phase:
-                ingredients_by_phase[phase] = []
-            ingredients_by_phase[phase].append(ingredient)
-        
+        try:
+            # Handle different subscription types, including frontend names
+            subscription_value = user_subscription
+            if hasattr(user_subscription, 'value'):
+                subscription_value = user_subscription.value
+                
+            # Convert to lowercase for case-insensitive comparison
+            sub_type = subscription_value.lower() if subscription_value else 'free'
+            
+            if sub_type in ['free']:
+                # Free tier - no premium or professional ingredients
+                query = query.filter(
+                    models.Ingredient.is_premium.is_(False),
+                    models.Ingredient.is_professional.is_(False)
+                )
+            elif sub_type in ['premium', 'creator']:
+                # Premium/Creator tier - no professional ingredients
+                query = query.filter(models.Ingredient.is_professional.is_(False))
+            # Professional/Pro Lab tier - all ingredients available (no filter)
+            
+            all_ingredients = query.all()
+            
+            # Categorize by phase
+            for ingredient in all_ingredients:
+                phase = ingredient.phase or "Uncategorized"
+                if phase not in ingredients_by_phase:
+                    ingredients_by_phase[phase] = []
+                ingredients_by_phase[phase].append(ingredient)
+                
+        except Exception as e:
+            # Log the error but return empty results to avoid crashing
+            logger.error(f"Error filtering ingredients by subscription: {str(e)}")
+            
         return ingredients_by_phase
     
     def generate_formula(

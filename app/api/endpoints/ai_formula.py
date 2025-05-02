@@ -9,7 +9,7 @@ from app.auth import get_current_user
 from app.services.ai_formula import AIFormulaGenerator
 from app.services.openai_service import OpenAIFormulaGenerator
 from app.utils.response_formatter import format_formula_response
-
+from app.utils.subscription_mapper import get_formula_limit, map_to_backend_type
 from datetime import datetime
 router = APIRouter()
 
@@ -38,13 +38,8 @@ async def generate_formula(
         models.Formula.created_at >= current_month_start
     ).count()
     
-    # Get formula limit based on subscription
-    if current_user.subscription_type == models.SubscriptionType.FREE:
-        formula_limit = 3
-    elif current_user.subscription_type == models.SubscriptionType.CREATOR:
-        formula_limit = 30
-    else:  # PRO_LAB
-        formula_limit = float('inf')  # Unlimited
+    # Get formula limit based on subscription using the utility function
+    formula_limit = get_formula_limit(current_user.subscription_type)
     
     # Check if limit is reached
     if formula_count >= formula_limit:
