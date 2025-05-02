@@ -53,6 +53,8 @@ origins = [
     "http://127.0.0.1:3000",
     "http://192.168.1.1:5173",
     "https://cosmetic-formula-frontend.vercel.app",
+    "https://www.beautycrafthq.com",
+    "https://beautycrafthq.com",
     settings.FRONTEND_URL,
 ]
 
