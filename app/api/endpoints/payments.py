@@ -45,6 +45,9 @@ async def create_checkout_session(
     """Create a checkout session for subscription"""
     try:
         # Add debugging here
+        if settings.STRIPE_SECRET_KEY and (not stripe.api_key or stripe.api_key != settings.STRIPE_SECRET_KEY):
+            stripe.api_key = settings.STRIPE_SECRET_KEY
+            logging.info(f"Set Stripe API key in handler: {stripe.api_key[:4]}...")
         logging.info(f"Creating checkout session for: {subscription_data.subscription_type}, Billing cycle: {subscription_data.billing_cycle}")
         logging.info(f"STRIPE_SECRET_KEY configured: {settings.STRIPE_SECRET_KEY[:4]}... (length: {len(settings.STRIPE_SECRET_KEY)})")
         
