@@ -55,6 +55,8 @@ origins = [
     "https://cosmetic-formula-frontend.vercel.app",
     "https://www.beautycrafthq.com",
     "https://beautycrafthq.com",
+    "https://cosmetic-formula-git-main-beautycraft.vercel.app",
+    "https://cosmetic-formula-frontend-git-main-beautycraft.vercel.app",
     settings.FRONTEND_URL,
 ]
 
@@ -68,7 +70,15 @@ app.add_middleware(
 )
 # Include authentication router
 app.include_router(auth_router, prefix="/api/auth", tags=["authentication"])
-
+# In main.py, add this to your router inclusion section
+try:
+    from app.auth_google import oauth_router  # Update this line to use auth_google.py
+    app.include_router(oauth_router, prefix="/api/auth", tags=["authentication"])
+    print("Successfully registered OAuth router")
+except ImportError as e:
+    print(f"Warning: OAuth router not found, error: {e}")
+except ImportError as e:
+    print(f"Warning: OAuth router not found, error: {e}")
 # Try to include additional auth endpoints
 try:
     from app.api.endpoints import auth as auth_endpoints
