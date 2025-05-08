@@ -99,3 +99,75 @@ def format_formula_response(formula, db):
     }
     
     return response
+
+
+
+def format_inci_list(formula, db, highlight_allergens=False):
+    """
+    Generate a properly formatted INCI list in descending order by percentage.
+    
+    Args:
+        formula: The formula object
+        db: Database session
+        highlight_allergens: Whether to highlight common allergens
+    
+    Returns:
+        Dictionary with formatted INCI list and detailed ingredient information
+    """
+    # Get ingredient associations from the formula_ingredients table
+    from sqlalchemy import text
+    sql = text("""
+        SELECT i.inci_name, i.name, fi.percentage, i.id
+        FROM ingredients i
+        JOIN formula_ingredients fi ON i.id = fi.ingredient_id
+        WHERE fi.formula_id = :formula_id
+        ORDER BY fi.percentage DESC
+    """)
+    
+    ingredients = db.execute(sql, {"formula_id": formula.id}).fetchall()
+    
+    # Common cosmetic allergens (partial list - would need to be expanded)
+    allergens = [
+        "amyl cinnamal", "benzyl alcohol", "cinnamyl alcohol", "citral", 
+        "eugenol", "hydroxycitronellal", "isoeugenol", "amylcinnamyl alcohol",
+        "benzyl salicylate", "cinnamal", "coumarin", "geraniol", "hydroxyisohexyl",
+        "anise alcohol", "benzyl cinnamate", "farnesol", "butylphenyl methylpropional",
+        "linalool", "benzyl benzoate", "citronellol", "hexyl cinnamal", "limonene",
+        "methyl 2-octynoate", "alpha-isomethyl ionone", "oak moss", "tree moss"
+    ]
+    
+    # Format the INCI list (comma-separated)
+    inci_list = ", ".join([ing.inci_name for ing in ingredients])
+    
+    # Create list with allergens in bold if requested
+    inci_list_with_allergens = inci_list
+    if highlight_allergens:
+        for allergen in allergens:
+            # Find partial matches and make them bold
+            for ingredient in ingredients:
+                if allergen.lower() in ingredient.inci_name.lower():
+                    # Replace in the full list, preserving case
+                    inci_list_with_allergens = inci_list_with_allergens.replace(
+                        ingredient.inci_name, 
+                        f"**{ingredient.inci_name}**"
+                    )
+    
+    # Create detailed list for UI display
+    ingredients_by_percentage = [
+        {
+            "id": ing.id,
+            "inci_name": ing.inci_name,
+            "common_name": ing.name,
+            "percentage": ing.percentage,
+            "is_allergen": any(allergen.lower() in ing.inci_name.lower() for allergen in allergens)
+        }
+        for ing in ingredients
+    ]
+    
+    return {
+        "formula_id": formula.id,
+        "formula_name": formula.name,
+        "inci_list": inci_list,
+        "inci_list_with_allergens": inci_list_with_allergens,
+        "ingredients_by_percentage": ingredients_by_percentage
+    }

@@ -26,16 +26,16 @@ class OpenAIFormulaGenerator:
         user_id: int
     ) -> Dict[str, Any]:
         """
-            Generate a formula using OpenAI based on subscription tier and preferences.
+        Generate a formula using OpenAI based on subscription tier and preferences.
+        
+        Args:
+            formula_request: Complete formula generation request with all profile fields
+            user_subscription: User's subscription tier
+            user_id: User ID to retrieve profile data
             
-            Args:
-                formula_request: Complete formula generation request with all profile fields
-                user_subscription: User's subscription tier
-                user_id: User ID to retrieve profile data
-                
-            Returns:
-                Dictionary with formula data
-            """
+        Returns:
+            Dictionary with formula data
+        """
         print(f"Generating formula for user {user_id} with request: {formula_request}")
         # Extract basic information
         product_type = formula_request.get("product_type", "moisturizer")
@@ -169,7 +169,7 @@ class OpenAIFormulaGenerator:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.4,
-                max_tokens=2500,
+                max_tokens=3500,  # Increased token limit to accommodate MSDS and SOP
                 n=1,
                 stop=None,
             )
@@ -285,6 +285,26 @@ USER PROFILE:
         if avoided_ingredients:
             base_prompt += f"\nIngredients to avoid: {', '.join(avoided_ingredients)}."
         
+        # Common elements for all tiers - always include MSDS and SOP
+        common_elements = """
+For ALL formulas, please always include:
+
+1. MATERIAL SAFETY DATA SHEET (MSDS): Provide a comprehensive MSDS for this formula including:
+   - Physical & chemical properties
+   - Hazard identification
+   - Handling & storage recommendations
+   - Disposal considerations
+   - First aid measures
+
+2. STANDARD OPERATING PROCEDURE (SOP): Provide a detailed SOP including:
+   - Equipment setup
+   - Sanitation procedures
+   - Detailed manufacturing steps with specific temperature guidelines
+   - Quality control checks
+   - Storage instructions
+   - Troubleshooting common issues
+"""
+        
         # Premium tier prompt
         if user_subscription == models.SubscriptionType.PREMIUM:
             premium_prompt = f"""
@@ -302,6 +322,8 @@ Please provide:
 9. Consideration for the user's skin type, texture, and lifestyle factors
 10. Anticipated benefits and results
 
+{common_elements}
+
 Format the response as follows:
 - FORMULA NAME: [Name]
 - DESCRIPTION: [Description]
@@ -309,6 +331,8 @@ Format the response as follows:
 - MANUFACTURING STEPS: [Numbered list of steps]
 - BENEFITS & RESULTS: [Description of expected benefits]
 - USAGE RECOMMENDATIONS: [How to use the product]
+- MATERIAL SAFETY DATA SHEET (MSDS): [Comprehensive MSDS]
+- STANDARD OPERATING PROCEDURE (SOP): [Detailed SOP]
 - NOTES: [Any additional notes about stability, storage, etc.]
 """
             return base_prompt + premium_prompt
@@ -387,6 +411,8 @@ Please provide a commercial-grade formulation including:
 11. Recommended testing protocols
 12. Shelf-life expectations and stability considerations
 
+{common_elements}
+
 Format the response as follows:
 - FORMULA NAME: [Name]
 - PRODUCT DESCRIPTION: [Description with key claims]
@@ -400,21 +426,27 @@ Format the response as follows:
 - TESTING PROTOCOLS: [Suggested tests for quality control]
 - MARKETING CLAIMS: [Substantiated claims aligned with brand voice]
 - SHELF-LIFE & STABILITY: [Expected shelf-life and stability considerations]
+- MATERIAL SAFETY DATA SHEET (MSDS): [Comprehensive MSDS]
+- STANDARD OPERATING PROCEDURE (SOP): [Detailed SOP]
 """
             return base_prompt + professional_prompt
             
         # Free tier (should not be reached with current implementation)
         else:
-            basic_prompt = """
+            basic_prompt = f"""
 Please provide a basic formulation that includes:
 1. A simple name for the formula
 2. A list of ingredients with approximate percentages
 3. Basic manufacturing steps
 
+{common_elements}
+
 Format the response as follows:
 - FORMULA NAME: [Name]
 - INGREDIENTS: [List ingredients with percentages]
 - MANUFACTURING STEPS: [Basic steps]
+- MATERIAL SAFETY DATA SHEET (MSDS): [Comprehensive MSDS]
+- STANDARD OPERATING PROCEDURE (SOP): [Detailed SOP]
 """
             return base_prompt + basic_prompt
     
@@ -432,7 +464,9 @@ Format the response as follows:
             "description": "",
             "type": product_type.title(),  # Set formula type from product_type
             "ingredients": [],
-            "steps": []
+            "steps": [],
+            "msds": "",  # Initialize MSDS field
+            "sop": ""    # Initialize SOP field
         }
         
         # Parse name
@@ -456,6 +490,48 @@ Format the response as follows:
                     if description:
                         formula_data["description"] = description
                         break
+        
+        # Parse MSDS content
+        if "MATERIAL SAFETY DATA SHEET (MSDS):" in ai_response or "MSDS:" in ai_response:
+            msds_header = "MATERIAL SAFETY DATA SHEET (MSDS):" if "MATERIAL SAFETY DATA SHEET (MSDS):" in ai_response else "MSDS:"
+            msds_sections = ai_response.split(msds_header)
+            if len(msds_sections) > 1:
+                next_section = None
+                remaining_headers = ["STANDARD OPERATING PROCEDURE (SOP):", "SOP:", "NOTES:"]
+                
+                for header in remaining_headers:
+                    if header in msds_sections[1]:
+                        next_section = msds_sections[1].find(header)
+                        break
+                
+                if next_section is not None and next_section > 0:
+                    msds_content = msds_sections[1][:next_section].strip()
+                else:
+                    # If no next section found, take everything until the end
+                    msds_content = msds_sections[1].strip()
+                
+                formula_data["msds"] = msds_content
+        
+        # Parse SOP content
+        if "STANDARD OPERATING PROCEDURE (SOP):" in ai_response or "SOP:" in ai_response:
+            sop_header = "STANDARD OPERATING PROCEDURE (SOP):" if "STANDARD OPERATING PROCEDURE (SOP):" in ai_response else "SOP:"
+            sop_sections = ai_response.split(sop_header)
+            if len(sop_sections) > 1:
+                next_section = None
+                remaining_headers = ["NOTES:"]
+                
+                for header in remaining_headers:
+                    if header in sop_sections[1]:
+                        next_section = sop_sections[1].find(header)
+                        break
+                
+                if next_section is not None and next_section > 0:
+                    sop_content = sop_sections[1][:next_section].strip()
+                else:
+                    # If no next section found, take everything until the end
+                    sop_content = sop_sections[1].strip()
+                
+                formula_data["sop"] = sop_content
         
         # Parse ingredients
         ingredient_section = None
@@ -531,7 +607,7 @@ Format the response as follows:
                         print(f"Unexpected error adding ingredient {name_part}: {str(e)}")
                         continue
         
-        # Parse steps - This part remains mostly unchanged
+        # Parse steps
         steps_section = None
         for header in ["MANUFACTURING STEPS:", "MANUFACTURING PROCESS:", "PROCESS:"]:
             if header in ai_response:
@@ -619,6 +695,69 @@ Format the response as follows:
                         }
                         for step in rule_based_formula.steps
                     ]
+                
+                # Generate default MSDS and SOP if they weren't parsed
+                if not formula_data["msds"]:
+                    formula_data["msds"] = (
+                        f"# Material Safety Data Sheet for {formula_data['name']}\n\n"
+                        "## 1. Product and Company Identification\n"
+                        f"Product Name: {formula_data['name']}\n"
+                        "Product Type: Cosmetic Formulation\n"
+                        "Recommended Use: Personal Care\n\n"
+                        "## 2. Hazards Identification\n"
+                        "This is a personal care product that is safe for consumers when used according to the label directions.\n\n"
+                        "## 3. Composition/Information on Ingredients\n"
+                        "Mixture of cosmetic ingredients. See formula ingredient list for details.\n\n"
+                        "## 4. First Aid Measures\n"
+                        "Eye Contact: Flush with water. Seek medical attention if irritation persists.\n"
+                        "Skin Contact: Discontinue use if irritation occurs. Wash with water.\n"
+                        "Ingestion: Contact a physician or poison control center.\n\n"
+                        "## 5. Handling and Storage\n"
+                        "Store in a cool, dry place away from direct sunlight.\n"
+                        "Keep out of reach of children.\n\n"
+                        "## 6. Disposal Considerations\n"
+                        "Dispose of in accordance with local regulations."
+                    )
+                
+                if not formula_data["sop"]:
+                    formula_data["sop"] = (
+                        f"# Standard Operating Procedure for {formula_data['name']}\n\n"
+                        "## 1. Equipment and Materials\n"
+                        "- Digital scale (precision 0.1g)\n"
+                        "- Water bath or double boiler\n"
+                        "- Thermometer (0-100°C)\n"
+                        "- Glass beakers (various sizes)\n"
+                        "- Overhead stirrer or homogenizer\n"
+                        "- pH meter\n"
+                        "- Clean spatulas and utensils\n"
+                        "- Sterilized packaging containers\n\n"
+                        
+                        "## 2. Sanitation Procedures\n"
+                        "- Sanitize all equipment with 70% isopropyl alcohol\n"
+                        "- Ensure clean workspace and wear appropriate PPE\n"
+                        "- Use purified water for all formulation steps\n\n"
+                        
+                        "## 3. Manufacturing Process\n"
+                        "Follow the manufacturing steps provided in the formula details.\n\n"
+                        
+                        "## 4. Quality Control\n"
+                        "- Check appearance, color, and odor\n"
+                        "- Verify pH is appropriate for product type\n"
+                        "- Perform stability testing at various temperatures\n"
+                        "- Check viscosity and texture\n\n"
+                        
+                        "## 5. Packaging and Storage\n"
+                        "- Fill containers at appropriate temperature\n"
+                        "- Seal containers immediately after filling\n"
+                        "- Store in cool, dry place away from direct sunlight\n"
+                        "- Label with batch number and production date\n\n"
+                        
+                        "## 6. Troubleshooting\n"
+                        "- If separation occurs: Check emulsifier percentage and mixing process\n"
+                        "- If viscosity issues: Adjust thickener concentration\n"
+                        "- If preservation issues: Check pH and preservative system"
+                    )
+                
             except Exception as e:
                 # Log the error but continue with whatever we have
                 print(f"Error in rule-based fallback: {str(e)}")

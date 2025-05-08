@@ -1,4 +1,5 @@
 # backend/app/config.py
+
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -9,12 +10,18 @@ load_dotenv(dotenv_path=env_path)
 
 class Settings:
     # Database
-    DATABASE_URL: str = os.getenv("postgres://postgres.fjdlhdnwsfgxkirkxynl:JWYJzoejzNmBqzGt@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require&supa=base-pooler.x")
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/cosmetic_formula_lab")
     print("Database URL:", DATABASE_URL)  # Debugging line to check the database URL
+    
     # Authentication
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your_super_secret_key_change_this_in_production")
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))
+    
+    # Get Notion API settings from environment
+    NOTION_API_KEY: str = os.getenv("NOTION_API_KEY", "")
+    NOTION_FORMULAS_DB_ID: str = os.getenv("NOTION_FORMULAS_DB_ID", "")
+    NOTION_DOCS_DB_ID: str = os.getenv("NOTION_DOCS_DB_ID", "")
     
     # Frontend URL for redirects (IMPORTANT for OAuth)
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "")
@@ -34,6 +41,7 @@ class Settings:
     # Environment
     DEBUG: bool = os.getenv("DEBUG", "True").lower() in ('true', '1', 't')
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    
     class Config:
         env_file = ".env"
 

@@ -1,11 +1,11 @@
-# Add to backend/app/api/endpoints/formulas.py
+# backend/app/api/endpoints/export.py - Final solution with landscape mode and special paragraph handling
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from fastapi.responses import StreamingResponse
 import io
 import csv
 import json
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import letter, landscape
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -14,20 +14,25 @@ from app import crud, models, schemas
 from app.database import get_db
 from app.auth import get_current_user
 from sqlalchemy.orm import Session
+import logging
+
+# Set up logging
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
-
-
-@router.get("/{formula_id}/export", response_class=Response)
-def export_formula(
+@router.get("/{formula_id}/export")
+async def export_formula(
     formula_id: int,
-    format: str = Query(..., description="Export format: pdf, csv, or json"),
+    format: str = Query(..., description="Export format: pdf, csv, json, or print"),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user)
 ):
     """
-    Export a formula in various formats (PDF, CSV, JSON)
+    Export a formula in various formats (PDF, CSV, JSON or print-friendly HTML)
     """
+    logger.info(f"Export request received for formula {formula_id} in {format} format")
+    
     # Get the formula
     formula = crud.get_formula(db, formula_id)
     
@@ -79,7 +84,15 @@ def export_formula(
     if format.lower() == "pdf":
         # Create PDF
         buffer = io.BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter)
+        # Use landscape orientation for wider tables
+        doc = SimpleDocTemplate(
+            buffer, 
+            pagesize=landscape(letter),
+            rightMargin=0.5*inch, 
+            leftMargin=0.5*inch,
+            topMargin=0.5*inch,
+            bottomMargin=0.5*inch
+        )
         styles = getSampleStyleSheet()
         
         # Add custom style for header
@@ -93,6 +106,16 @@ def export_formula(
                                   parent=styles['Heading2'], 
                                   fontSize=14,
                                   spaceAfter=10))
+                                  
+        # Add custom style for INCI names
+        styles.add(ParagraphStyle(
+            name='INCI',
+            parent=styles['Normal'],
+            fontSize=10,
+            wordWrap='CJK',  # More aggressive word wrapping
+            leading=12,      # Line spacing
+            alignment=0      # Left alignment
+        ))
         
         # Content elements
         elements = []
@@ -114,7 +137,7 @@ def export_formula(
             basic_info.append(["Description", formula.description])
         
         # Create basic info table
-        basic_info_table = Table(basic_info, colWidths=[2*inch, 4*inch])
+        basic_info_table = Table(basic_info, colWidths=[2*inch, 6*inch])
         basic_info_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
             ('TEXTCOLOR', (0, 0), (0, -1), colors.black),
@@ -144,16 +167,27 @@ def export_formula(
             # Prepare data for the table
             ingredient_data = [["Ingredient", "INCI Name", "Percentage", "Function"]]
             for item in ingredients:
+                # Wrap INCI names in paragraphs for better handling
+                inci_paragraph = Paragraph(item["inci_name"], styles['INCI'])
+                
                 ingredient_data.append([
                     item["name"],
-                    item["inci_name"],
+                    inci_paragraph,  # Use paragraph for INCI names
                     f"{item['percentage']}%",
                     item["function"] or "-"
                 ])
             
-            # Create the table
-            ingredient_table = Table(ingredient_data, colWidths=[2*inch, 2*inch, 1*inch, 1.5*inch])
+            # Create the table with adjusted column widths based on content
+            # Much wider INCI Name column in landscape mode
+            ingredient_table = Table(
+                ingredient_data, 
+                colWidths=[2.5*inch, 4.5*inch, 1*inch, 2*inch],
+                repeatRows=1  # Repeat header row if table spans multiple pages
+            )
+            
+            # Add word wrapping for text content
             ingredient_table.setStyle(TableStyle([
+                # Table borders and background
                 ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
                 ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
@@ -161,8 +195,19 @@ def export_formula(
                 ('FONTSIZE', (0, 0), (-1, -1), 10),
                 ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
                 ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-                ('GRID', (0, 0), (-1, -1), 1, colors.black)
+                ('GRID', (0, 0), (-1, -1), 1, colors.black),
+                
+                # Word wrapping for all cells
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                
+                # Center the percentage column
+                ('ALIGN', (2, 0), (2, -1), 'CENTER'),
             ]))
+            
             elements.append(ingredient_table)
             elements.append(Spacer(1, 0.2*inch))
         

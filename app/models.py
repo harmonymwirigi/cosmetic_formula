@@ -126,6 +126,8 @@ class Formula(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     is_public = Column(Boolean, default=False)
     total_weight = Column(Float, default=100.0)  # Total weight in grams
+    msds = Column(Text, nullable=True)  # Material Safety Data Sheet
+    sop = Column(Text, nullable=True)  # Standard Operating Procedure
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
@@ -480,3 +482,35 @@ class NotificationPreference(Base):
     
     # Relationship
     user = relationship("User")
+
+class NotionIntegration(Base):
+    __tablename__ = "notion_integrations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
+    access_token = Column(String, nullable=False)
+    workspace_id = Column(String, nullable=True)
+    formulas_db_id = Column(String, nullable=True)
+    docs_db_id = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationship
+    user = relationship("User", back_populates="notion_integration")
+
+# Add this relationship to User model
+User.notion_integration = relationship("NotionIntegration", back_populates="user", uselist=False)
+
+class NotionSync(Base):
+    __tablename__ = "notion_syncs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    formula_id = Column(Integer, ForeignKey("formulas.id"), nullable=False)
+    notion_page_id = Column(String, nullable=False)
+    last_synced = Column(DateTime(timezone=True), nullable=False)
+    
+    # Relationship
+    formula = relationship("Formula", back_populates="notion_sync")
+
+# Add this relationship to Formula model
+Formula.notion_sync = relationship("NotionSync", back_populates="formula", uselist=False)

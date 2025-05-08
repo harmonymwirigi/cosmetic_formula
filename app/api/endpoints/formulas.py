@@ -8,7 +8,7 @@ from app.database import get_db
 from app.auth import get_current_user
 import logging
 from app import utils
-from app.utils import response_formatter
+from app.utils.response_formatter import format_formula_response, format_inci_list
 
 router = APIRouter()
 
@@ -359,6 +359,8 @@ def read_formula(
         "user_id": formula.user_id,
         "is_public": formula.is_public,
         "total_weight": formula.total_weight,
+        "msds": formula.msds,  # Add MSDS field
+        "sop": formula.sop,    # Add SOP field
         "created_at": formula.created_at,
         "updated_at": formula.updated_at,
         "user": {
@@ -384,9 +386,6 @@ def read_formula(
             for step in formula.steps
         ]
     }
-
-# Add this to your formulas.py file
-
 @router.post("/create_formula", response_model=None)
 def create_formula(
     formula: schemas.FormulaCreate,
@@ -476,6 +475,8 @@ def create_formula(
         "type": formula_with_details.type,
         "user_id": formula_with_details.user_id,
         "is_public": formula_with_details.is_public,
+        "msds": formula_with_details.msds,  # Add MSDS field
+        "sop": formula_with_details.sop,    # Add SOP field
         "total_weight": formula_with_details.total_weight,
         "created_at": formula_with_details.created_at,
         "updated_at": formula_with_details.updated_at,
@@ -549,3 +550,153 @@ def delete_formula(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete formula: {str(e)}"
         )
+
+
+@router.post("/update-documentation", status_code=status.HTTP_200_OK, response_model=schemas.MessageResponse)
+async def update_all_formulas_documentation(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update all formulas to ensure they have MSDS and SOP content.
+    """
+    from app.services.openai_service import OpenAIFormulaGenerator
+    
+    # Get all formulas for the current user
+    formulas = db.query(models.Formula).filter(
+        models.Formula.user_id == current_user.id
+    ).all()
+    
+    openai_generator = OpenAIFormulaGenerator(db)
+    updated_count = 0
+    
+    for formula in formulas:
+        # Check if formula is missing MSDS or SOP
+        if not formula.msds or not formula.sop:
+            # Generate placeholder MSDS if missing
+            if not formula.msds:
+                formula.msds = (
+                    f"# Material Safety Data Sheet for {formula.name}\n\n"
+                    "## 1. Product and Company Identification\n"
+                    f"Product Name: {formula.name}\n"
+                    "Product Type: Cosmetic Formulation\n"
+                    "Recommended Use: Personal Care\n\n"
+                    "## 2. Hazards Identification\n"
+                    "This is a personal care product that is safe for consumers when used according to the label directions.\n\n"
+                    "## 3. Composition/Information on Ingredients\n"
+                    "Mixture of cosmetic ingredients. See formula ingredient list for details.\n\n"
+                    "## 4. First Aid Measures\n"
+                    "Eye Contact: Flush with water. Seek medical attention if irritation persists.\n"
+                    "Skin Contact: Discontinue use if irritation occurs. Wash with water.\n"
+                    "Ingestion: Contact a physician or poison control center.\n\n"
+                    "## 5. Handling and Storage\n"
+                    "Store in a cool, dry place away from direct sunlight.\n"
+                    "Keep out of reach of children.\n\n"
+                    "## 6. Disposal Considerations\n"
+                    "Dispose of in accordance with local regulations."
+                )
+            
+            # Generate placeholder SOP if missing
+            if not formula.sop:
+                formula.sop = (
+                    f"# Standard Operating Procedure for {formula.name}\n\n"
+                    "## 1. Equipment and Materials\n"
+                    "- Digital scale (precision 0.1g)\n"
+                    "- Water bath or double boiler\n"
+                    "- Thermometer (0-100°C)\n"
+                    "- Glass beakers (various sizes)\n"
+                    "- Overhead stirrer or homogenizer\n"
+                    "- pH meter\n"
+                    "- Clean spatulas and utensils\n"
+                    "- Sterilized packaging containers\n\n"
+                    
+                    "## 2. Sanitation Procedures\n"
+                    "- Sanitize all equipment with 70% isopropyl alcohol\n"
+                    "- Ensure clean workspace and wear appropriate PPE\n"
+                    "- Use purified water for all formulation steps\n\n"
+                    
+                    "## 3. Manufacturing Process\n"
+                    "Follow the manufacturing steps provided in the formula details.\n\n"
+                    
+                    "## 4. Quality Control\n"
+                    "- Check appearance, color, and odor\n"
+                    "- Verify pH is appropriate for product type\n"
+                    "- Perform stability testing at various temperatures\n"
+                    "- Check viscosity and texture\n\n"
+                    
+                    "## 5. Packaging and Storage\n"
+                    "- Fill containers at appropriate temperature\n"
+                    "- Seal containers immediately after filling\n"
+                    "- Store in cool, dry place away from direct sunlight\n"
+                    "- Label with batch number and production date\n\n"
+                    
+                    "## 6. Troubleshooting\n"
+                    "- If separation occurs: Check emulsifier percentage and mixing process\n"
+                    "- If viscosity issues: Adjust thickener concentration\n"
+                    "- If preservation issues: Check pH and preservative system"
+                )
+            
+            db.commit()
+            updated_count += 1
+    
+    return {"message": f"Updated documentation for {updated_count} formulas"}
+
+@router.put("/{formula_id}/documentation", response_model=schemas.Formula)
+def update_formula_documentation(
+    formula_id: int,
+    data: schemas.FormulaDocumentationUpdate,  # New schema we'll create
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Update the MSDS and SOP of an existing formula.
+    """
+    # Get the formula
+    formula = crud.get_formula(db, formula_id)
+    
+    # Check if formula exists and belongs to the current user
+    if not formula:
+        raise HTTPException(status_code=404, detail="Formula not found")
+    
+    if formula.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this formula")
+    
+    # Update MSDS and SOP
+    if data.msds is not None:
+        formula.msds = data.msds
+    if data.sop is not None:
+        formula.sop = data.sop
+    
+    db.commit()
+    db.refresh(formula)
+    
+    # Return formatted formula response
+    return utils.response_formatter.format_formula_response(formula, db)
+
+
+
+@router.get("/{formula_id}/inci-list", response_model=schemas.INCIList)
+def get_formula_inci_list(
+    formula_id: int,
+    highlight_allergens: bool = False,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """
+    Generate a properly formatted INCI list for a formula.
+    This follows international labeling standards with ingredients in descending order by percentage.
+    
+    - highlight_allergens: If true, common allergens will be highlighted in the response
+    """
+    # Get the formula
+    formula = crud.get_formula(db, formula_id)
+    
+    # Check if formula exists and belongs to the current user or is public
+    if not formula:
+        raise HTTPException(status_code=404, detail="Formula not found")
+    
+    if formula.user_id != current_user.id and not formula.is_public:
+        raise HTTPException(status_code=403, detail="Not authorized to access this formula")
+    
+    # Format the INCI list using our utility function
+    return format_inci_list(formula, db, highlight_allergens)

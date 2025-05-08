@@ -198,11 +198,13 @@ async def generate_formula(
             is_public=False,
             total_weight=100.0,
             ingredients=ingredients,
-            steps=steps
+            steps=steps,
+            msds=formula_data.get("msds", ""),  # Add this line
+            sop=formula_data.get("sop", "")     # Add this line
         )
         
         # Create the formula in the database
-        db_formula = crud.create_formula(db=db, formula=formula_create, user_id=current_user.id)
+        db_formula = await crud.create_formula(db=db, formula=formula_create, user_id=current_user.id)
         
         # Format the response to match the expected schema
         return format_formula_response(db_formula, db)

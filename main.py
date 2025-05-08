@@ -9,9 +9,33 @@ from app.database import engine, get_db
 from app.auth import auth_router, get_current_user
 from app.config import settings
 from datetime import datetime
+import os
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
+# Initialize Notion settings from environment variables
+settings.NOTION_API_KEY = os.getenv("NOTION_API_KEY", settings.NOTION_API_KEY)
 
+def format_notion_id(notion_id):
+    """Format a Notion ID with correct hyphen positions if needed."""
+    if not notion_id:
+        return notion_id
+    
+    # Remove any existing hyphens
+    notion_id = notion_id.replace("-", "")
+    
+    # Check if it's the correct length
+    if len(notion_id) != 32:
+        return notion_id
+    
+    # Format with hyphens: 8-4-4-4-12
+    return f"{notion_id[0:8]}-{notion_id[8:12]}-{notion_id[12:16]}-{notion_id[16:20]}-{notion_id[20:]}"
+settings.NOTION_FORMULAS_DB_ID = os.getenv("NOTION_FORMULAS_DB_ID", settings.NOTION_FORMULAS_DB_ID)
+settings.NOTION_DOCS_DB_ID = os.getenv("NOTION_DOCS_DB_ID", settings.NOTION_DOCS_DB_ID)
+
+# Log settings for debugging
+print(f"Notion API Key: {'*'*(len(settings.NOTION_API_KEY)-4)}{settings.NOTION_API_KEY[-4:] if settings.NOTION_API_KEY else 'Not set'}")
+print(f"Notion Formulas DB ID: {settings.NOTION_FORMULAS_DB_ID or 'Not set'}")
+print(f"Notion Docs DB ID: {settings.NOTION_DOCS_DB_ID or 'Not set'}")
 app = FastAPI(title="Cosmetic Formula Lab API")
 
 # Add session middleware for OAuth
@@ -117,19 +141,23 @@ def test_endpoint():
 @app.options("/{path:path}")
 async def options_route(request: Request, path: str):
     return {"status": "ok"}
-
+try:
+    from app.api.endpoints import notion
+    app.include_router(notion.router, prefix="/api/notion", tags=["notion"])
+except ImportError:
+    print("Warning: Notion endpoints not found, skipping...")
 # Try to import and include API endpoints
 try:
     from app.api.endpoints import formulas
     app.include_router(formulas.router, prefix="/api/formulas", tags=["formulas"])
 except ImportError:
     print("Warning: Formulas endpoints not found, skipping...")
-
 try:
     from app.api.endpoints import export
-    app.include_router(export.router, prefix="/api/export", tags=["export"])
-except ImportError:
-    print("Warning: Export endpoints not found, skipping...")   
+    app.include_router(export.router, prefix="/api/formulas", tags=["export"])
+    print("Successfully registered export router")
+except ImportError as e:
+    print(f"Warning: Export endpoints not found, error: {e}")
 
 try:
     from app.api.endpoints import notifications

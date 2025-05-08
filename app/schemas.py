@@ -259,11 +259,26 @@ class FormulaBase(BaseModel):
     type: str
     is_public: bool = False
     total_weight: float = 100.0
+    msds: Optional[str] = None  # Add MSDS field
+    sop: Optional[str] = None   # Add SOP field
 
-class FormulaCreate(FormulaBase):
-    ingredients: List[FormulaIngredientCreate]
-    steps: List[FormulaStepCreate]
-
+class FormulaCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    type: str
+    is_public: bool = False
+    total_weight: float = 100.0
+    ingredients: List[FormulaIngredientCreate] = []
+    steps: List[FormulaStepCreate] = []
+    msds: Optional[str] = None  # Make sure this is included
+    sop: Optional[str] = None   # Make sure this is included
+class INCIList(BaseModel):
+    """Schema for ingredient list formatted according to INCI standards"""
+    formula_id: int
+    formula_name: str
+    inci_list: str
+    inci_list_with_allergens: Optional[str] = None  # With allergens highlighted
+    ingredients_by_percentage: Optional[List[Dict[str, Any]]] = None  # Detailed breakdown
 class FormulaUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
@@ -478,3 +493,8 @@ class FormulaGenerationRequest(BaseModel):
     competitor_brands: Optional[str] = None
     brand_voice: Optional[str] = None
     product_inspirations: Optional[str] = None
+
+
+class FormulaDocumentationUpdate(BaseModel):
+    msds: Optional[str] = None
+    sop: Optional[str] = None

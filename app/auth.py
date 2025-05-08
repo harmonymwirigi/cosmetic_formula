@@ -2,16 +2,16 @@
 from datetime import datetime, timedelta
 from typing import Optional
 import logging
-
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
+
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 from . import crud, models, schemas
 from .database import get_db
@@ -20,8 +20,38 @@ from .config import settings
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-# OAuth2 scheme for token authentication
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+# Custom OAuth2 bearers to support query parameter tokens and optional authentication
+class OAuth2PasswordBearerWithQuery(OAuth2PasswordBearer):
+    async def __call__(self, request: Request) -> Optional[str]:
+        # First try to get the token from the Authorization header
+        authorization: str = request.headers.get("Authorization")
+        scheme, param = "", ""
+        if authorization:
+            try:
+                scheme, param = authorization.split()
+                if scheme.lower() == "bearer":
+                    return param
+            except ValueError:
+                pass
+        
+        # If not in header, try query parameters
+        token = request.query_params.get("token")
+        if token:
+            return token
+            
+        # If not found, use the parent class method which will raise an exception
+        return await super().__call__(request)
+
+class OAuth2PasswordBearerOptional(OAuth2PasswordBearerWithQuery):
+    async def __call__(self, request: Request) -> Optional[str]:
+        try:
+            return await super().__call__(request)
+        except HTTPException:
+            return None
+
+# OAuth2 schemes for token authentication
+oauth2_scheme = OAuth2PasswordBearerWithQuery(tokenUrl="/api/auth/login")
+oauth2_scheme_optional = OAuth2PasswordBearerOptional(tokenUrl="/api/auth/login")
 
 # Router for authentication endpoints
 auth_router = APIRouter()
@@ -70,6 +100,22 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         raise credentials_exception
     
     return user
+
+async def get_current_user_optional(
+    token: str = Depends(oauth2_scheme_optional),
+    db: Session = Depends(get_db)
+) -> Optional[models.User]:
+    """
+    Get the current user if a valid token is provided, otherwise return None.
+    This is useful for endpoints that can be accessed both authenticated and anonymously.
+    """
+    if not token:
+        return None
+        
+    try:
+        return await get_current_user(token, db)
+    except HTTPException:
+        return None
 
 # Authentication endpoints
 @auth_router.post("/register", response_model=schemas.User)

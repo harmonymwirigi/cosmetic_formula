@@ -156,7 +156,7 @@ def create_formula_step(
     db.refresh(db_step)
     return db_step
 
-def create_formula(db: Session, formula: schemas.FormulaCreate, user_id: int) -> models.Formula:
+async def create_formula(db: Session, formula: schemas.FormulaCreate, user_id: int) -> models.Formula:
     """
     Create a new formula with ingredients and steps.
     """
@@ -167,6 +167,8 @@ def create_formula(db: Session, formula: schemas.FormulaCreate, user_id: int) ->
         type=formula.type,
         is_public=formula.is_public,
         total_weight=formula.total_weight,
+        msds=formula.msds,  # Add MSDS field
+        sop=formula.sop,    # Add SOP field
         user_id=user_id
     )
     
@@ -211,6 +213,17 @@ def create_formula(db: Session, formula: schemas.FormulaCreate, user_id: int) ->
         
         # Commit all the ingredient and step additions
         db.commit()
+        
+        # Auto-sync to Notion in the background
+        try:
+            from app.services.notion_service import NotionService
+            import asyncio
+            
+            notion_service = NotionService(db)
+            # Run in background to avoid blocking
+            asyncio.create_task(notion_service.sync_formula_to_notion(db_formula.id, user_id))
+        except Exception as e:
+            print(f"Error auto-syncing to Notion: {str(e)}")
         
         # Return the formula with all relationships loaded
         return db.query(models.Formula).filter(models.Formula.id == db_formula.id).first()
