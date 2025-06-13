@@ -198,6 +198,13 @@ except ImportError:
     print("Warning: Users endpoints not found, skipping...")
 
 try:
+    from app.api.endpoints import costs
+    app.include_router(costs.router, prefix="/api/costs", tags=["costs"])
+    print("Successfully registered cost management router")
+except ImportError as e:
+    print(f"Warning: Cost endpoints not found, error: {e}")
+
+try:
     from app.api.endpoints import ai_formula
     print("Successfully imported AI formula router")
     print(f"Router routes: {[route for route in ai_formula.router.routes]}")

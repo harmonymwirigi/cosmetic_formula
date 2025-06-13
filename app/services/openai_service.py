@@ -101,12 +101,12 @@ class OpenAIFormulaGenerator:
             return self._generate_fallback_formula(questionnaire_data, user_subscription, product_type)
     
     def _generate_questionnaire_prompt(
-        self,
-        questionnaire_data: Dict[str, Any],
-        user_subscription: models.SubscriptionType
-    ) -> str:
+    self,
+    questionnaire_data: Dict[str, Any],
+    user_subscription: models.SubscriptionType
+) -> str:
         """
-        Generate a comprehensive prompt based on questionnaire responses.
+        Generate a complete formulation prompt for BeautyCraft based on questionnaire data and subscription tier.
         """
         purpose = questionnaire_data.get("purpose", "personal")
         product_category = questionnaire_data.get("product_category", "face_care")
@@ -121,133 +121,164 @@ class OpenAIFormulaGenerator:
         budget = questionnaire_data.get("budget", "")
         timeline = questionnaire_data.get("timeline", "")
         additional_notes = questionnaire_data.get("additional_notes", "")
+
+        # Format target user information
+        target_user_info = []
+        if target_user.get('gender'):
+            target_user_info.append(f"Gender: {target_user['gender']}")
+        if target_user.get('ageGroup'):
+            target_user_info.append(f"Age: {target_user['ageGroup']}")
+        if target_user.get('skinHairType'):
+            target_user_info.append(f"Skin/Hair Type: {target_user['skinHairType']}")
+        if target_user.get('culturalBackground'):
+            target_user_info.append(f"Cultural Background: {target_user['culturalBackground']}")
+        if target_user.get('concerns'):
+            target_user_info.append(f"Concerns: {target_user['concerns']}")
         
-        # Base prompt
-        prompt = f"""
-Create a complete cosmetic formula based on the following detailed questionnaire responses:
+        target_user_formatted = "; ".join(target_user_info) if target_user_info else "Not specified"
 
-PURPOSE: {purpose}
-PRODUCT CATEGORY: {product_category}
-FORMULA TYPE(S): {', '.join(formula_types)}
-PRIMARY GOALS: {', '.join(primary_goals)}
+        prompt = f"""You are an expert cosmetic chemist working inside BeautyCraft, an AI-powered formulation SaaS for DIY formulators, indie beauty brands, and cosmetic labs.
 
-TARGET USER PROFILE:
-- Gender: {target_user.get('gender', 'Not specified')}
-- Age Group: {target_user.get('ageGroup', 'Not specified')}
-- Skin/Hair Type: {target_user.get('skinHairType', 'Not specified')}
-- Cultural Background: {target_user.get('culturalBackground', 'Not specified')}
-- Concerns/Lifestyle: {target_user.get('concerns', 'Not specified')}
+    Based on the following client questionnaire, generate a compliant, professional-grade cosmetic formulation.
 
-INGREDIENT PREFERENCES:
-- Must Include: {must_have_ingredients if must_have_ingredients else 'No specific requirements'}
-- Must Avoid: {avoid_ingredients if avoid_ingredients else 'No specific restrictions'}
+    --- 
+    🎯 PURPOSE: {purpose}  
+    💅 PRODUCT CATEGORY: {product_category}  
+    🔬 FORMULA TYPE(S): {', '.join(formula_types)}  
+    ✨ PRIMARY GOALS: {', '.join(primary_goals)}  
+    👤 TARGET USER: {target_user_formatted}  
+    ✅ MUST-HAVE INGREDIENTS: {must_have_ingredients or 'No specific requirements'}  
+    🚫 INGREDIENTS TO AVOID: {avoid_ingredients or 'No specific restrictions'}  
+    🌿 BRAND VISION: {brand_vision or 'Not specified'}  
+    🌸 DESIRED SENSORY EXPERIENCE: {', '.join(desired_experience) if desired_experience else 'No specific preferences'}  
+    📦 PACKAGING PREFERENCES: {packaging or 'Not specified'}  
+    💸 BUDGET: {budget or 'Not specified'}  
+    ⏳ TIMELINE: {timeline or 'Not specified'}  
+    📝 ADDITIONAL NOTES: {additional_notes or 'None'}  
+    ---  
 
-DESIRED EXPERIENCE: {', '.join(desired_experience) if desired_experience else 'No specific preferences'}
+    Generate a complete, REALISTIC formulation with the following structure:
 
-BRAND VISION: {brand_vision if brand_vision else 'Not specified'}
+    1. ✅ *INCI Formula Table* - Create a comprehensive formulation with 10-18 ingredients (depending on product complexity):
+    **WATER PHASE (typically 60-80% for serums, 70-85% for lotions):**
+    - Base: Distilled Water (largest percentage)
+    - Humectants: Glycerin, Hyaluronic Acid, or Sodium PCA
+    - Water-soluble actives: Niacinamide, Peptides, etc.
+    - Chelating agent: EDTA (0.1%)
+    - pH adjusters if needed
 
-PACKAGING: {packaging if packaging else 'Not specified'}
-BUDGET: {budget if budget else 'Not specified'}
-TIMELINE: {timeline if timeline else 'Not specified'}
+    **OIL PHASE (typically 15-25% for serums, 10-20% for lotions):**
+    - Emulsifier: Appropriate for product type
+    - Emollient oils: 2-3 different oils for texture complexity
+    - Oil-soluble actives: Retinol, Vitamin E, etc.
+    - Thickening agents if needed
 
-ADDITIONAL NOTES: {additional_notes if additional_notes else 'None'}
-"""
+    **COOL DOWN PHASE (typically 5-10%):**
+    - Preservative system: Broad-spectrum (0.5-1.0%)
+    - Heat-sensitive actives
+    - Fragrance/Essential oils (if used, max 1%)
+    - Additional functional ingredients
+
+    2. 🌡 *Formulation Notes*:  
+    - Ideal pH range (specific numbers, e.g., 5.5-6.5)
+    - Solubility notes for each ingredient
+    - Processing temperature for each phase
+    - Incompatibility warnings
+    - Expected texture and viscosity
+    - Stability considerations
+
+    3. 📈 *Cost Estimation (raw)*:  
+    - Cost per 100g batch and per oz
+    - Reference supplier for each ingredient  
+    - Total raw material cost breakdown
+
+    4. 📜 *Compliance Review*:  
+    - Complete INCI label in descending order
+    - EU allergen declarations if applicable
+    - Green/natural claims compatibility
+    - Regulatory notes for target markets
+
+    5. 💡 *Smart Suggestions*:  
+    - Ingredient upgrades (premium alternatives)
+    - Optional actives for customization
+    - Seasonal variations
+    - Performance boosters
+
+    6. 📦 *Packaging Recommendation*:  
+    - Optimal container type for stability
+    - Biodegradable options
+    - Supplier recommendations
+    - UV protection considerations
+
+    7. 🛠 *Formulator's Tip*:  
+    - Critical processing insight for success
+    """
 
         # Add subscription-specific instructions
         if user_subscription == models.SubscriptionType.PROFESSIONAL:
             prompt += """
-This is for a PROFESSIONAL user developing a commercial product. Please provide:
 
-1. A creative, market-ready product name that reflects the brand vision and target market
-2. A comprehensive product description with marketing appeal
-3. Complete ingredient list with exact percentages (totaling 100%)
-4. Detailed manufacturing process with specific temperatures and equipment
-5. Marketing positioning and key claims
-6. Regulatory considerations and compliance notes
-7. Material Safety Data Sheet (MSDS)
-8. Standard Operating Procedure (SOP)
-9. Packaging recommendations based on formula type
-10. Stability and shelf-life considerations
+    🏢 **PROFESSIONAL TIER REQUIREMENTS:**
+    - Generate 15-18 ingredient comprehensive formulations
+    - Include regulatory compliance notes for FDA & EU markets
+    - Provide detailed stability testing protocols
+    - Include manufacturing scale-up considerations (pilot to commercial batch)
+    - Add complete batch documentation templates
+    - Suggest quality control checkpoints and testing parameters
+    - Include microbiology testing recommendations
+    - Add raw material specification requirements
+    """
 
-Format the response as follows:
-- PRODUCT NAME: [Creative, marketable name]
-- PRODUCT DESCRIPTION: [Marketing-focused description]
-- TARGET MARKET: [Detailed market analysis]
-- KEY CLAIMS: [Substantiated product claims]
-- INGREDIENTS: [Detailed list with percentages, INCI names, phases, and functions]
-- MANUFACTURING PROCESS: [Step-by-step with temperatures and equipment]
-- REGULATORY NOTES: [pH, preservation, stability considerations]
-- PACKAGING RECOMMENDATIONS: [Specific packaging suggestions]
-- MARKETING POSITIONING: [Brand positioning and messaging]
-- MSDS: [Complete Material Safety Data Sheet]
-- SOP: [Detailed Standard Operating Procedure]
-- STABILITY NOTES: [Expected shelf-life and testing recommendations]
-"""
-        
         elif user_subscription == models.SubscriptionType.PREMIUM:
             prompt += """
-This is for a PREMIUM user. Please provide:
 
-1. An appealing product name that reflects the desired goals and experience
-2. A detailed product description
-3. Complete ingredient list with percentages (totaling 100%)
-4. Step-by-step manufacturing instructions
-5. Expected benefits and results
-6. Usage recommendations
-7. Material Safety Data Sheet (MSDS)
-8. Standard Operating Procedure (SOP)
+    ⭐ **PREMIUM TIER REQUIREMENTS:**
+    - Generate 12-15 ingredient well-rounded formulations
+    - Include basic regulatory guidance
+    - Provide detailed ingredient sourcing recommendations
+    - Add intermediate stability notes and testing
+    - Include packaging compatibility considerations
+    - Suggest performance testing methods
+    """
 
-Format the response as follows:
-- PRODUCT NAME: [Appealing, descriptive name]
-- DESCRIPTION: [Detailed product description]
-- INGREDIENTS: [List with percentages, INCI names, and phases]
-- MANUFACTURING STEPS: [Numbered manufacturing process]
-- BENEFITS: [Expected benefits and results]
-- USAGE: [How to use the product]
-- MSDS: [Material Safety Data Sheet]
-- SOP: [Standard Operating Procedure]
-- NOTES: [Additional formulation notes]
-"""
-        
         else:  # FREE tier
             prompt += """
-Please provide:
 
-1. A simple, descriptive product name
-2. Basic product description
-3. Ingredient list with approximate percentages
-4. Simple manufacturing steps
-5. Material Safety Data Sheet (MSDS)
-6. Standard Operating Procedure (SOP)
+    🆓 **FREE TIER REQUIREMENTS:**
+    - Generate 10-12 ingredient complete but accessible formulations
+    - Focus on readily available ingredients
+    - Provide clear, step-by-step manufacturing instructions
+    - Include basic safety and stability guidelines
+    - Keep costs reasonable for hobbyist formulators
+    """
 
-Format the response as follows:
-- PRODUCT NAME: [Simple name]
-- DESCRIPTION: [Basic description]
-- INGREDIENTS: [List with percentages]
-- MANUFACTURING STEPS: [Basic steps]
-- MSDS: [Material Safety Data Sheet]
-- SOP: [Standard Operating Procedure]
-"""
-        
-        # Add specific formulation guidelines
         prompt += """
 
-IMPORTANT FORMULATION GUIDELINES:
-- All ingredient percentages must total exactly 100%
-- Use proper INCI (International Nomenclature of Cosmetic Ingredients) names
-- Include appropriate preservation system (0.5-1.5%)
-- Consider pH requirements for the product type
-- Ensure ingredient compatibility
-- Include both common names and INCI names for ingredients
-- Provide realistic percentage ranges for each ingredient
-- Consider the desired texture and experience in ingredient selection
-- Include phase information (water phase, oil phase, cool-down phase)
-- Suggest appropriate emulsifiers if creating an emulsion
-- Consider the target user's specific needs and restrictions
+    **IMPORTANT GUIDELINES:**
+    - Generate REALISTIC, COMPREHENSIVE formulations with 10-18 ingredients minimum
+    - Ensure total ingredient percentages add up to exactly 100%
+    - Use correct INCI names for all ingredients
+    - Include complete preservative system (primary + secondary preservatives typically 0.8-1.2% total)
+    - Add chelating agents (EDTA at 0.1%) for stability
+    - Include pH adjusters when needed (Citric Acid, Sodium Hydroxide)
+    - Mention specific processing temperatures and phase compatibility
+    - Include multiple emollients/oils for complex skin feel (don't use just one oil)
+    - Add texture modifiers (thickeners, rheology modifiers) for proper consistency
+    - Include functional ingredients: antioxidants, penetration enhancers, etc.
+    - Reference realistic suppliers: MakingCosmetics, Lotioncrafter, Essential Wholesale, Bulk Apothecary
+    - Consider seasonal stability and climate factors
+    - Ensure formulations are manufacturing-feasible at small and large scales
+    - For emulsions, include proper emulsifier systems (primary + co-emulsifier)
+    - Add sensory modifiers for premium feel (silicones, esters, etc.)
 
-Please create a formula that truly addresses the user's specific goals and preferences while being safe, stable, and effective.
-"""
-        
+    **MINIMUM INGREDIENT EXPECTATIONS BY PRODUCT TYPE:**
+    - Serums: 10-15 ingredients (water, humectants, actives, preservatives, pH adjusters, penetration enhancers)
+    - Moisturizers/Creams: 12-18 ingredients (emulsion system, multiple emollients, actives, preservatives, texture modifiers)
+    - Cleansers: 8-12 ingredients (surfactants, co-surfactants, conditioning agents, preservatives, pH adjusters)
+    - Masks: 10-16 ingredients (base system, actives, texture modifiers, preservatives)
+
+    Format your response clearly with the numbered sections above. Make it professional yet accessible for the target subscription tier."""
+
         return prompt
     
     def _parse_questionnaire_response(self, ai_response: str, product_type: str, questionnaire_data: Dict) -> Dict[str, Any]:

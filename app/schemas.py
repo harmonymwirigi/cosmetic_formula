@@ -498,3 +498,210 @@ class FormulaGenerationRequest(BaseModel):
 class FormulaDocumentationUpdate(BaseModel):
     msds: Optional[str] = None
     sop: Optional[str] = None
+
+
+
+# Currency-related schemas
+class CurrencyBase(BaseModel):
+    code: str = Field(..., max_length=3, description="3-letter currency code")
+    name: str
+    symbol: str = Field(..., max_length=5)
+    exchange_rate_to_usd: float = Field(..., gt=0, description="Exchange rate to USD")
+    is_active: bool = True
+
+class CurrencyCreate(CurrencyBase):
+    pass
+
+class Currency(CurrencyBase):
+    id: int
+    last_updated: datetime
+    
+    class Config:
+        orm_mode = True
+
+# Unit type enum
+class UnitType(str, Enum):
+    GRAM = "g"
+    OUNCE = "oz"
+    KILOGRAM = "kg"
+    POUND = "lb"
+    MILLILITER = "ml"
+    LITER = "l"
+
+# Updated Ingredient schemas
+class IngredientBase(BaseModel):
+    name: str
+    inci_name: str
+    description: Optional[str] = None
+    recommended_max_percentage: Optional[float] = None
+    solubility: Optional[str] = None
+    phase: Optional[str] = None
+    function: Optional[str] = None
+    is_premium: bool = False
+    is_professional: bool = False
+    
+    # Cost fields
+    cost_per_gram: Optional[float] = None
+    cost_per_oz: Optional[float] = None
+    purchase_cost: Optional[float] = None
+    purchase_quantity: Optional[float] = None
+    purchase_unit: Optional[UnitType] = None
+    currency: str = "USD"
+    supplier_name: Optional[str] = None
+    supplier_sku: Optional[str] = None
+    shipping_cost: Optional[float] = None
+
+class IngredientCreate(IngredientBase):
+    pass
+
+class IngredientUpdate(BaseModel):
+    name: Optional[str] = None
+    inci_name: Optional[str] = None
+    description: Optional[str] = None
+    recommended_max_percentage: Optional[float] = None
+    solubility: Optional[str] = None
+    phase: Optional[str] = None
+    function: Optional[str] = None
+    is_premium: Optional[bool] = None
+    is_professional: Optional[bool] = None
+    
+    # Cost fields
+    cost_per_gram: Optional[float] = None
+    cost_per_oz: Optional[float] = None
+    purchase_cost: Optional[float] = None
+    purchase_quantity: Optional[float] = None
+    purchase_unit: Optional[UnitType] = None
+    currency: Optional[str] = None
+    supplier_name: Optional[str] = None
+    supplier_sku: Optional[str] = None
+    shipping_cost: Optional[float] = None
+
+class IngredientCostUpdate(BaseModel):
+    """Specialized schema for updating only cost information"""
+    cost_per_gram: Optional[float] = None
+    cost_per_oz: Optional[float] = None
+    purchase_cost: Optional[float] = None
+    purchase_quantity: Optional[float] = None
+    purchase_unit: Optional[UnitType] = None
+    currency: Optional[str] = None
+    supplier_name: Optional[str] = None
+    supplier_sku: Optional[str] = None
+    shipping_cost: Optional[float] = None
+
+class IngredientInDB(IngredientBase):
+    id: int
+    last_updated_cost: Optional[datetime] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class Ingredient(IngredientInDB):
+    pass
+
+# Updated Formula schemas
+class FormulaBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+    type: str
+    is_public: bool = False
+    total_weight: float = 100.0  # Keep for backward compatibility
+    batch_size: float = 100.0
+    batch_unit: UnitType = UnitType.GRAM
+    msds: Optional[str] = None
+    sop: Optional[str] = None
+
+class FormulaCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    type: str
+    is_public: bool = False
+    total_weight: float = 100.0
+    batch_size: float = 100.0
+    batch_unit: UnitType = UnitType.GRAM
+    ingredients: List[FormulaIngredientCreate] = []
+    steps: List[FormulaStepCreate] = []
+    msds: Optional[str] = None
+    sop: Optional[str] = None
+
+class FormulaUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    type: Optional[str] = None
+    is_public: Optional[bool] = None
+    total_weight: Optional[float] = None
+    batch_size: Optional[float] = None
+    batch_unit: Optional[UnitType] = None
+
+# Cost calculation schemas
+class IngredientCostBreakdown(BaseModel):
+    """Cost breakdown for a single ingredient in a formula"""
+    ingredient_id: int
+    ingredient_name: str
+    percentage: float
+    quantity_needed: float  # in grams
+    quantity_unit: str
+    cost_per_unit: float
+    total_cost: float
+    currency: str
+
+class FormulaCostBreakdown(BaseModel):
+    """Complete cost breakdown for a formula"""
+    formula_id: int
+    formula_name: str
+    batch_size: float
+    batch_unit: str
+    ingredient_costs: List[IngredientCostBreakdown]
+    total_batch_cost: float
+    cost_per_gram: float
+    cost_per_oz: float
+    currency: str
+    calculation_date: datetime
+    missing_cost_ingredients: List[str] = []  # Ingredients without cost data
+
+class CostCalculationRequest(BaseModel):
+    """Request schema for cost calculations"""
+    formula_id: int
+    batch_size: Optional[float] = None
+    batch_unit: Optional[UnitType] = None
+    target_currency: Optional[str] = "USD"
+
+# Cost history schemas
+class IngredientCostHistoryCreate(BaseModel):
+    ingredient_id: int
+    cost_per_gram: float
+    currency: str
+    purchase_cost: Optional[float] = None
+    purchase_quantity: Optional[float] = None
+    purchase_unit: Optional[UnitType] = None
+    supplier_name: Optional[str] = None
+
+class IngredientCostHistory(BaseModel):
+    id: int
+    ingredient_id: int
+    cost_per_gram: float
+    currency: str
+    purchase_cost: Optional[float] = None
+    purchase_quantity: Optional[float] = None
+    purchase_unit: Optional[str] = None
+    supplier_name: Optional[str] = None
+    recorded_at: datetime
+    
+    class Config:
+        orm_mode = True
+
+# Bulk cost import schema
+class BulkCostImport(BaseModel):
+    """Schema for importing multiple ingredient costs at once"""
+    costs: List[Dict[str, Any]]  # Flexible structure for CSV/Excel imports
+    default_currency: str = "USD"
+    supplier_name: Optional[str] = None
+
+class BulkCostImportResult(BaseModel):
+    """Result of bulk cost import operation"""
+    total_processed: int
+    successful_updates: int
+    failed_updates: int
+    errors: List[str]
+    updated_ingredients: List[str]

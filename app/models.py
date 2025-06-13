@@ -125,6 +125,11 @@ class Formula(Base):
     type = Column(String, nullable=False)  # e.g., "Serum", "Moisturizer", etc.
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     is_public = Column(Boolean, default=False)
+
+    # UPDATED BATCH SIZE FIELDS
+    total_weight = Column(Float, default=100.0)  # Keep for backward compatibility
+    batch_size = Column(Float, default=100.0)    # Preferred batch size
+    batch_unit = Column(String, default='g')     # Unit: 'g', 'oz', 'kg', 'lb'
     total_weight = Column(Float, default=100.0)  # Total weight in grams
     msds = Column(Text, nullable=True)  # Material Safety Data Sheet
     sop = Column(Text, nullable=True)  # Standard Operating Procedure
@@ -153,8 +158,48 @@ class Ingredient(Base):
     function = Column(String, nullable=True)  # e.g., "Emollient", "Humectant", "Preservative"
     is_premium = Column(Boolean, default=False)
     is_professional = Column(Boolean, default=False)
+
+    cost_per_gram = Column(Float, nullable=True)  # Standardized cost per gram in USD
+    cost_per_oz = Column(Float, nullable=True)   # Standardized cost per ounce in USD
+    purchase_cost = Column(Float, nullable=True)  # Total cost paid for purchase
+    purchase_quantity = Column(Float, nullable=True)  # Quantity purchased
+    purchase_unit = Column(String, nullable=True)  # Unit: 'g', 'oz', 'kg', 'lb', 'ml', 'l'
+    currency = Column(String, default='USD')  # Currency code
+    supplier_name = Column(String, nullable=True)  # Supplier information
+    supplier_sku = Column(String, nullable=True)  # Supplier SKU/product code
+    last_updated_cost = Column(DateTime(timezone=True), nullable=True)
+    shipping_cost = Column(Float, nullable=True)  # Additional shipping cost for this item
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+# NEW MODEL for Currency Management
+class Currency(Base):
+    __tablename__ = "currencies"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(3), unique=True, nullable=False, index=True)  # USD, EUR, GBP, etc.
+    name = Column(String, nullable=False)  # US Dollar, Euro, British Pound
+    symbol = Column(String(5), nullable=False)  # $, €, £
+    exchange_rate_to_usd = Column(Float, nullable=False)  # Rate to convert to USD
+    is_active = Column(Boolean, default=True)
+    last_updated = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+# NEW MODEL for Cost History (optional - for tracking cost changes)
+class IngredientCostHistory(Base):
+    __tablename__ = "ingredient_cost_history"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False)
+    cost_per_gram = Column(Float, nullable=False)
+    currency = Column(String(3), nullable=False)
+    purchase_cost = Column(Float, nullable=True)
+    purchase_quantity = Column(Float, nullable=True)
+    purchase_unit = Column(String, nullable=True)
+    supplier_name = Column(String, nullable=True)
+    recorded_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationship
+    ingredient = relationship("Ingredient", backref="cost_history")
 
 class FormulaStep(Base):
     __tablename__ = "formula_steps"
