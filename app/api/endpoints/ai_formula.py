@@ -18,16 +18,15 @@ router = APIRouter()
 class QuestionnaireFormulaRequest(schemas.BaseModel):
     # Required fields
     purpose: str  # 'personal' or 'brand'
-    product_category: str  # 'face_care', 'hair_care', 'body_care'
+    product_category: str  # 'face_care', 'hair_care', 'body_care', 'pet_care'
     formula_types: List[str]  # ['serum', 'cream', etc.]
     primary_goals: List[str]  # ['hydrate', 'anti_aging', etc.]
     
     # Target user (required for brand, optional for personal)
     target_user: Optional[Dict[str, Any]] = {}
     
-    # Ingredient preferences
-    preferred_ingredients_text: Optional[str] = ""
-    avoided_ingredients_text: Optional[str] = ""
+    # Simplified ingredient preferences - SINGLE FIELD INSTEAD OF MULTIPLE
+    additional_information: Optional[str] = ""  # Replaces preferred_ingredients_text and avoided_ingredients_text
     
     # Brand and experience
     brand_vision: Optional[str] = ""
@@ -51,9 +50,13 @@ async def generate_formula_from_questionnaire(
 ) -> Dict[str, Any]:
     """
     Generate a formula using AI based on comprehensive questionnaire responses.
+    Updated to handle pet care and simplified ingredient preferences.
     """
     
     print(f"Received questionnaire formula generation request for user {current_user.id}")
+    print(f"Product category: {formula_request.product_category}")
+    print(f"Formula types: {formula_request.formula_types}")
+    print(f"Primary goals: {formula_request.primary_goals}")
     
     # Check user's monthly formula count
     current_month_start = datetime.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -86,6 +89,14 @@ async def generate_formula_from_questionnaire(
             detail="Product category is required"
         )
     
+    # Validate product category includes pet care
+    valid_categories = ['face_care', 'hair_care', 'body_care', 'pet_care']
+    if formula_request.product_category not in valid_categories:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Product category must be one of: {', '.join(valid_categories)}"
+        )
+    
     if not formula_request.formula_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -107,6 +118,60 @@ async def generate_formula_from_questionnaire(
                 detail="Target user information is required for brand products"
             )
     
+    # Validate formula types based on category
+    category_product_types = {
+        'face_care': [
+            'serum', 'cream', 'cleanser', 'toner', 'face_mask', 'face_oil', 
+            'eye_cream', 'exfoliant', 'essence', 'spf_moisturizer', 
+            'spot_treatment', 'makeup_remover', 'facial_mist'
+        ],
+        'hair_care': [
+            'shampoo', 'conditioner', 'hair_oil', 'hair_mask', 'leave_in_conditioner',
+            'scalp_scrub', 'dry_shampoo', 'hair_serum', 'hair_gel', 'styling_cream',
+            'heat_protectant', 'scalp_tonic'
+        ],
+        'body_care': [
+            'body_lotion', 'body_butter', 'body_scrub', 'shower_gel', 'bar_soap',
+            'body_oil', 'hand_cream', 'foot_cream', 'deodorant', 'body_mist',
+            'stretch_mark_cream', 'bust_firming_cream'
+        ],
+        'pet_care': [
+            'pet_shampoo', 'pet_conditioner', 'pet_balm', 'pet_cologne', 
+            'ear_cleaner', 'paw_wax', 'anti_itch_spray', 'flea_tick_spray', 'pet_wipes'
+        ]
+    }
+    
+    valid_types = category_product_types.get(formula_request.product_category, [])
+    invalid_types = [t for t in formula_request.formula_types if t not in valid_types]
+    
+    if invalid_types:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid formula types for {formula_request.product_category}: {invalid_types}. Valid types: {valid_types}"
+        )
+    
+    # Validate goals based on category
+    category_goals = {
+        'face_care': ['hydrate', 'anti_aging', 'anti_acne', 'soothe', 'brighten', 'exfoliate'],
+        'hair_care': ['nourish', 'strengthen', 'hair_growth', 'repair', 'volume', 'moisture'],
+        'body_care': ['moisturize', 'exfoliate', 'firm', 'soothe', 'protect', 'cleanse'],
+        'pet_care': ['clean', 'soothe_skin', 'odor_control', 'coat_shine', 'anti_itch', 'pest_control']
+    }
+    
+    valid_goals = category_goals.get(formula_request.product_category, [])
+    invalid_goals = [g for g in formula_request.primary_goals if g not in valid_goals]
+    
+    if invalid_goals:
+        print(f"Warning: Invalid goals for {formula_request.product_category}: {invalid_goals}")
+        # Filter out invalid goals instead of rejecting the request
+        formula_request.primary_goals = [g for g in formula_request.primary_goals if g in valid_goals]
+        
+        if not formula_request.primary_goals:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"No valid goals provided for {formula_request.product_category}. Valid goals: {valid_goals}"
+            )
+    
     try:
         # Use OpenAI service for questionnaire-based generation
         generator = OpenAIFormulaGenerator(db)
@@ -114,12 +179,16 @@ async def generate_formula_from_questionnaire(
         # Convert request to dictionary for processing
         request_dict = formula_request.dict()
         
+        print(f"Sending request to OpenAI generator: {request_dict}")
+        
         # Generate formula using questionnaire data
         formula_data = await generator.generate_formula_from_questionnaire(
             questionnaire_data=request_dict,
             user_subscription=current_user.subscription_type,
             user_id=current_user.id
         )
+        
+        print(f"Received formula data from OpenAI: {formula_data.get('name', 'Unknown name')}")
         
         # Create the formula in the database
         ingredients_data = formula_data.get("ingredients", [])
@@ -153,6 +222,8 @@ async def generate_formula_from_questionnaire(
             sop=formula_data.get("sop", "")
         )
         
+        print(f"Creating formula in database with {len(ingredients)} ingredients and {len(steps)} steps")
+        
         # Save to database
         db_formula = await crud.create_formula(db=db, formula=formula_create, user_id=current_user.id)
         
@@ -172,7 +243,8 @@ async def generate_formula_from_questionnaire(
                 "product_category": formula_request.product_category,
                 "formula_types": formula_request.formula_types,
                 "primary_goals": formula_request.primary_goals,
-                "target_user": formula_request.target_user or {}
+                "target_user": formula_request.target_user or {},
+                "additional_information": formula_request.additional_information
             },
             "benefits": formula_data.get("benefits", ""),
             "usage": formula_data.get("usage", ""),
@@ -251,8 +323,14 @@ async def generate_formula(
             detail="Product type is required"
         )
     
-    # Check if product_type is valid
-    valid_product_types = ["serum", "moisturizer", "cleanser", "toner", "mask", "essence"]
+    # Updated valid product types to include pet care
+    valid_product_types = [
+        "serum", "moisturizer", "cleanser", "toner", "mask", "essence",
+        "shampoo", "conditioner", "hair_oil", "hair_mask",
+        "body_lotion", "body_scrub", "deodorant",
+        "pet_shampoo", "pet_conditioner", "pet_balm"
+    ]
+    
     if formula_request.product_type.lower() not in valid_product_types:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -266,10 +344,19 @@ async def generate_formula(
         # Convert legacy request to questionnaire format
         legacy_request_dict = formula_request.dict(exclude_unset=True)
         
+        # Determine category from product type
+        product_category = "face_care"  # default
+        if formula_request.product_type.lower() in ["shampoo", "conditioner", "hair_oil", "hair_mask"]:
+            product_category = "hair_care"
+        elif formula_request.product_type.lower() in ["body_lotion", "body_scrub", "deodorant"]:
+            product_category = "body_care"
+        elif formula_request.product_type.lower().startswith("pet_"):
+            product_category = "pet_care"
+        
         # Map legacy fields to questionnaire format
         questionnaire_data = {
             "purpose": "personal",  # Default for legacy requests
-            "product_category": "face_care",  # Default
+            "product_category": product_category,
             "formula_types": [formula_request.product_type],
             "primary_goals": legacy_request_dict.get("skin_concerns", ["hydrate"]),
             "target_user": {
@@ -278,8 +365,7 @@ async def generate_formula(
                 "skinHairType": legacy_request_dict.get("skin_type", ""),
                 "concerns": ""
             },
-            "preferred_ingredients_text": "",
-            "avoided_ingredients_text": legacy_request_dict.get("ingredients_to_avoid", ""),
+            "additional_information": legacy_request_dict.get("ingredients_to_avoid", ""),
             "brand_vision": "",
             "desired_experience": [],
             "generate_name": True

@@ -13,6 +13,7 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 class OpenAIFormulaGenerator:
     """
     OpenAI-powered formula generator with questionnaire-based input.
+    Updated to handle pet care and simplified ingredient preferences.
     """
     
     def __init__(self, db: Session):
@@ -27,14 +28,7 @@ class OpenAIFormulaGenerator:
     ) -> Dict[str, Any]:
         """
         Generate a formula using OpenAI based on questionnaire responses.
-        
-        Args:
-            questionnaire_data: Complete questionnaire responses
-            user_subscription: User's subscription tier
-            user_id: User ID
-            
-        Returns:
-            Dictionary with formula data including AI-generated name
+        Updated to handle pet care and ensure different formulas based on product type.
         """
         print(f"Generating formula from questionnaire for user {user_id}")
         
@@ -53,20 +47,46 @@ class OpenAIFormulaGenerator:
         
         # Determine primary product type for backend compatibility
         primary_formula_type = formula_types[0].lower()
-        valid_product_types = ["serum", "moisturizer", "cleanser", "toner", "mask", "essence", "cream", "oil", "lotion"]
         
-        # Map questionnaire types to backend types
+        # Updated valid product types to include pet care
+        valid_product_types = [
+            # Face care
+            "serum", "cream", "cleanser", "toner", "face_mask", "face_oil", "eye_cream", 
+            "exfoliant", "essence", "spf_moisturizer", "spot_treatment", "makeup_remover", "facial_mist",
+            # Hair care
+            "shampoo", "conditioner", "hair_oil", "hair_mask", "leave_in_conditioner", 
+            "scalp_scrub", "dry_shampoo", "hair_serum", "hair_gel", "styling_cream", 
+            "heat_protectant", "scalp_tonic",
+            # Body care
+            "body_lotion", "body_butter", "body_scrub", "shower_gel", "bar_soap", 
+            "body_oil", "hand_cream", "foot_cream", "deodorant", "body_mist", 
+            "stretch_mark_cream", "bust_firming_cream",
+            # Pet care - NEW
+            "pet_shampoo", "pet_conditioner", "pet_balm", "pet_cologne", "ear_cleaner", 
+            "paw_wax", "anti_itch_spray", "flea_tick_spray", "pet_wipes"
+        ]
+        
+        # Map questionnaire types to backend types if needed
         type_mapping = {
-            "cream": "moisturizer",
-            "oil": "serum",
-            "lotion": "moisturizer",
-            "leave-in / styling": "serum",
-            "exfoliator": "cleanser"
+            "moisturizer": "cream",
+            "toner": "facial_mist",
+            "mask": "face_mask",
+            "oil": "face_oil",
+            "lotion": "body_lotion",
+            "leave-in": "leave_in_conditioner",
+            "styling": "styling_cream"
         }
         
         product_type = type_mapping.get(primary_formula_type, primary_formula_type)
         if product_type not in valid_product_types:
-            product_type = "serum"  # Default fallback
+            # Default based on category
+            category_defaults = {
+                "face_care": "serum",
+                "hair_care": "shampoo", 
+                "body_care": "body_lotion",
+                "pet_care": "pet_shampoo"
+            }
+            product_type = category_defaults.get(product_category, "serum")
         
         try:
             # Generate the appropriate prompt based on questionnaire responses
@@ -79,10 +99,10 @@ class OpenAIFormulaGenerator:
             response = await openai.ChatCompletion.acreate(
                 model="gpt-4-turbo",
                 messages=[
-                    {"role": "system", "content": "You are an expert cosmetic chemist and product developer specializing in creating personalized skincare and haircare formulations."},
+                    {"role": "system", "content": "You are an expert cosmetic chemist and product developer specializing in creating personalized skincare, haircare, body care, and pet care formulations."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.6,  # Slightly higher for more creative names
+                temperature=0.7,  # Higher for more creative names and varied formulas
                 max_tokens=4000,
                 n=1,
                 stop=None,
@@ -101,20 +121,20 @@ class OpenAIFormulaGenerator:
             return self._generate_fallback_formula(questionnaire_data, user_subscription, product_type)
     
     def _generate_questionnaire_prompt(
-    self,
-    questionnaire_data: Dict[str, Any],
-    user_subscription: models.SubscriptionType
-) -> str:
+        self,
+        questionnaire_data: Dict[str, Any],
+        user_subscription: models.SubscriptionType
+    ) -> str:
         """
-        Generate a complete formulation prompt for BeautyCraft based on questionnaire data and subscription tier.
+        Generate a complete formulation prompt that ensures different formulas based on product type.
+        Updated to handle pet care and simplified additional information field.
         """
         purpose = questionnaire_data.get("purpose", "personal")
         product_category = questionnaire_data.get("product_category", "face_care")
         formula_types = questionnaire_data.get("formula_types", [])
         primary_goals = questionnaire_data.get("primary_goals", [])
         target_user = questionnaire_data.get("target_user", {})
-        must_have_ingredients = questionnaire_data.get("preferred_ingredients_text", "")
-        avoid_ingredients = questionnaire_data.get("avoided_ingredients_text", "")
+        additional_information = questionnaire_data.get("additional_information", "")  # Simplified field
         brand_vision = questionnaire_data.get("brand_vision", "")
         desired_experience = questionnaire_data.get("desired_experience", [])
         packaging = questionnaire_data.get("packaging_preferences", "")
@@ -137,153 +157,260 @@ class OpenAIFormulaGenerator:
         
         target_user_formatted = "; ".join(target_user_info) if target_user_info else "Not specified"
 
+        # Get category-specific details
+        category_context = self._get_category_context(product_category, formula_types[0] if formula_types else "")
+
         prompt = f"""You are an expert cosmetic chemist working inside BeautyCraft, an AI-powered formulation SaaS for DIY formulators, indie beauty brands, and cosmetic labs.
 
-    Based on the following client questionnaire, generate a compliant, professional-grade cosmetic formulation.
+CRITICAL: You MUST create a DIFFERENT and UNIQUE formula for each specific product type. Do NOT generate generic formulas.
 
-    --- 
-    🎯 PURPOSE: {purpose}  
-    💅 PRODUCT CATEGORY: {product_category}  
-    🔬 FORMULA TYPE(S): {', '.join(formula_types)}  
-    ✨ PRIMARY GOALS: {', '.join(primary_goals)}  
-    👤 TARGET USER: {target_user_formatted}  
-    ✅ MUST-HAVE INGREDIENTS: {must_have_ingredients or 'No specific requirements'}  
-    🚫 INGREDIENTS TO AVOID: {avoid_ingredients or 'No specific restrictions'}  
-    🌿 BRAND VISION: {brand_vision or 'Not specified'}  
-    🌸 DESIRED SENSORY EXPERIENCE: {', '.join(desired_experience) if desired_experience else 'No specific preferences'}  
-    📦 PACKAGING PREFERENCES: {packaging or 'Not specified'}  
-    💸 BUDGET: {budget or 'Not specified'}  
-    ⏳ TIMELINE: {timeline or 'Not specified'}  
-    📝 ADDITIONAL NOTES: {additional_notes or 'None'}  
-    ---  
+Based on the following client questionnaire, generate a compliant, professional-grade cosmetic formulation.
 
-    Generate a complete, REALISTIC formulation with the following structure:
+--- 
+🎯 PURPOSE: {purpose}  
+💅 PRODUCT CATEGORY: {product_category.replace('_', ' ').title()}  
+🔬 FORMULA TYPE(S): {', '.join(formula_types)}  
+✨ PRIMARY GOALS: {', '.join(primary_goals)}  
+👤 TARGET USER: {target_user_formatted}  
+📝 ADDITIONAL INFORMATION: {additional_information or 'No specific requirements'}  
+🌿 BRAND VISION: {brand_vision or 'Not specified'}  
+🌸 DESIRED SENSORY EXPERIENCE: {', '.join(desired_experience) if desired_experience else 'No specific preferences'}  
+📦 PACKAGING PREFERENCES: {packaging or 'Not specified'}  
+💸 BUDGET: {budget or 'Not specified'}  
+⏳ TIMELINE: {timeline or 'Not specified'}  
+📝 ADDITIONAL NOTES: {additional_notes or 'None'}  
+---  
 
-    1. ✅ *INCI Formula Table* - Create a comprehensive formulation with 10-18 ingredients (depending on product complexity):
-    **WATER PHASE (typically 60-80% for serums, 70-85% for lotions):**
-    - Base: Distilled Water (largest percentage)
-    - Humectants: Glycerin, Hyaluronic Acid, or Sodium PCA
-    - Water-soluble actives: Niacinamide, Peptides, etc.
-    - Chelating agent: EDTA (0.1%)
-    - pH adjusters if needed
+{category_context}
 
-    **OIL PHASE (typically 15-25% for serums, 10-20% for lotions):**
-    - Emulsifier: Appropriate for product type
-    - Emollient oils: 2-3 different oils for texture complexity
-    - Oil-soluble actives: Retinol, Vitamin E, etc.
-    - Thickening agents if needed
+🧪 **CRITICAL VALIDATION RULES - APPLY BEFORE GENERATING:**
 
-    **COOL DOWN PHASE (typically 5-10%):**
-    - Preservative system: Broad-spectrum (0.5-1.0%)
-    - Heat-sensitive actives
-    - Fragrance/Essential oils (if used, max 1%)
-    - Additional functional ingredients
+Before generating the formula, apply the following validation rules:
 
-    2. 🌡 *Formulation Notes*:  
-    - Ideal pH range (specific numbers, e.g., 5.5-6.5)
-    - Solubility notes for each ingredient
-    - Processing temperature for each phase
-    - Incompatibility warnings
-    - Expected texture and viscosity
-    - Stability considerations
+1. **PRODUCT TYPE SPECIFICITY:**
+   - {formula_types[0].upper() if formula_types else 'PRODUCT'} formulas are DIFFERENT from other product types
+   - Use ingredients and percentages SPECIFIC to {formula_types[0]} formulation
+   - Follow industry standards for {formula_types[0]} consistency, texture, and performance
+   - Do NOT use generic "one-size-fits-all" formulations
 
-    3. 📈 *Cost Estimation (raw)*:  
-    - Cost per 100g batch and per oz
-    - Reference supplier for each ingredient  
-    - Total raw material cost breakdown
+2. **EMULSIFICATION VALIDATION:**
+   - If Water Phase > 5% AND Oil Phase > 5% AND no emulsifier is present → MUST add a suitable emulsifier
+   - Check emulsifier concentration: typically 2-8% depending on system complexity
 
-    4. 📜 *Compliance Review*:  
-    - Complete INCI label in descending order
-    - EU allergen declarations if applicable
-    - Green/natural claims compatibility
-    - Regulatory notes for target markets
+3. **GALENIC FORM MATCHING:**
+   - **Serums:** Hydrogel or light emulsion based on solubility of actives
+   - **Creams/Moisturizers:** REQUIRE emulsifier if water + oil are both > 5%
+   - **Oils/Balms:** Anhydrous formulations (no water phase)
+   - **Cleansers/Shampoos:** REQUIRE surfactant system + pH 4.5–5.5
+   - **Pet Products:** Use pet-safe ingredients only, avoid toxic components
 
-    5. 💡 *Smart Suggestions*:  
-    - Ingredient upgrades (premium alternatives)
-    - Optional actives for customization
-    - Seasonal variations
-    - Performance boosters
+4. **GOAL-SPECIFIC FORMULATION:**
+   Based on goals: {', '.join(primary_goals)}, ensure your formula includes:
+   {self._get_goal_specific_requirements(primary_goals, product_category)}
 
-    6. 📦 *Packaging Recommendation*:  
-    - Optimal container type for stability
-    - Biodegradable options
-    - Supplier recommendations
-    - UV protection considerations
+5. **AUTOMATIC FIXES REQUIRED:**
+   - If formulation violates any rule, FIX IT AUTOMATICALLY and explain the fix
+   - Suggest phase adjustments if needed
+   - Recommend alternative ingredients if incompatibilities detected
 
-    7. 🛠 *Formulator's Tip*:  
-    - Critical processing insight for success
-    """
+Generate a complete, REALISTIC formulation with the following structure:
+
+**PRODUCT NAME:** Create a unique, creative name that reflects the product type and goals
+
+**DESCRIPTION:** 2-3 sentences describing the product and its key benefits
+
+1. ✅ *INCI Formula Table* - Create a comprehensive formulation with 10-18 ingredients:
+
+**WATER PHASE (adjust based on product type):**
+- Base ingredients appropriate for {formula_types[0] if formula_types else 'product'}
+- Humectants and water-soluble actives
+- Chelating agents (EDTA 0.1%)
+
+**OIL PHASE (adjust based on product type):**
+- Emulsifiers (if needed for product type)
+- Emollients and oil-soluble actives
+- Texture modifiers
+
+**COOL DOWN PHASE:**
+- Preservative system (0.8-1.2% total)
+- Heat-sensitive actives
+- Fragrance (if applicable, max 1%)
+
+2. 🌡 *Formulation Notes*:  
+- Ideal pH range for {formula_types[0] if formula_types else 'product'}
+- Processing temperatures
+- Expected texture and performance
+- VALIDATION NOTES: Any automatic fixes applied
+
+3. 📈 *Cost Estimation*:  
+- Cost per 100g batch
+- Reference suppliers
+
+4. 📜 *Compliance Review*:  
+- Complete INCI label in descending order
+- Regulatory notes for {product_category}
+
+5. 💡 *Smart Suggestions*:  
+- Product-specific performance boosters
+- Customization options
+
+6. 📦 *Packaging Recommendation*:  
+- Optimal container for {formula_types[0] if formula_types else 'product'}
+
+7. 🛠 *Formulator's Tip*:  
+- Critical insight specific to {formula_types[0] if formula_types else 'product'} manufacturing
+"""
 
         # Add subscription-specific instructions
         if user_subscription == models.SubscriptionType.PROFESSIONAL:
             prompt += """
 
-    🏢 **PROFESSIONAL TIER REQUIREMENTS:**
-    - Generate 15-18 ingredient comprehensive formulations
-    - Include regulatory compliance notes for FDA & EU markets
-    - Provide detailed stability testing protocols
-    - Include manufacturing scale-up considerations (pilot to commercial batch)
-    - Add complete batch documentation templates
-    - Suggest quality control checkpoints and testing parameters
-    - Include microbiology testing recommendations
-    - Add raw material specification requirements
-    """
+🏢 **PROFESSIONAL TIER REQUIREMENTS:**
+- Generate 15-18 ingredient comprehensive formulations
+- Include regulatory compliance notes for target markets
+- Provide detailed stability testing protocols
+- Include manufacturing scale-up considerations
+- Add complete batch documentation templates
+- Include microbiology testing recommendations
+"""
 
         elif user_subscription == models.SubscriptionType.PREMIUM:
             prompt += """
 
-    ⭐ **PREMIUM TIER REQUIREMENTS:**
-    - Generate 12-15 ingredient well-rounded formulations
-    - Include basic regulatory guidance
-    - Provide detailed ingredient sourcing recommendations
-    - Add intermediate stability notes and testing
-    - Include packaging compatibility considerations
-    - Suggest performance testing methods
-    """
+⭐ **PREMIUM TIER REQUIREMENTS:**
+- Generate 12-15 ingredient well-rounded formulations
+- Include regulatory guidance
+- Provide ingredient sourcing recommendations
+- Add stability notes and testing protocols
+"""
 
         else:  # FREE tier
             prompt += """
 
-    🆓 **FREE TIER REQUIREMENTS:**
-    - Generate 10-12 ingredient complete but accessible formulations
-    - Focus on readily available ingredients
-    - Provide clear, step-by-step manufacturing instructions
-    - Include basic safety and stability guidelines
-    - Keep costs reasonable for hobbyist formulators
-    """
+🆓 **FREE TIER REQUIREMENTS:**
+- Generate 10-12 ingredient complete formulations
+- Focus on readily available ingredients
+- Provide clear manufacturing instructions
+- Include basic safety guidelines
+"""
 
-        prompt += """
+        prompt += f"""
 
-    **IMPORTANT GUIDELINES:**
-    - Generate REALISTIC, COMPREHENSIVE formulations with 10-18 ingredients minimum
-    - Ensure total ingredient percentages add up to exactly 100%
-    - Use correct INCI names for all ingredients
-    - Include complete preservative system (primary + secondary preservatives typically 0.8-1.2% total)
-    - Add chelating agents (EDTA at 0.1%) for stability
-    - Include pH adjusters when needed (Citric Acid, Sodium Hydroxide)
-    - Mention specific processing temperatures and phase compatibility
-    - Include multiple emollients/oils for complex skin feel (don't use just one oil)
-    - Add texture modifiers (thickeners, rheology modifiers) for proper consistency
-    - Include functional ingredients: antioxidants, penetration enhancers, etc.
-    - Reference realistic suppliers: MakingCosmetics, Lotioncrafter, Essential Wholesale, Bulk Apothecary
-    - Consider seasonal stability and climate factors
-    - Ensure formulations are manufacturing-feasible at small and large scales
-    - For emulsions, include proper emulsifier systems (primary + co-emulsifier)
-    - Add sensory modifiers for premium feel (silicones, esters, etc.)
+**IMPORTANT GUIDELINES:**
+- **PRODUCT TYPE SPECIFICITY IS CRITICAL** - Make {formula_types[0] if formula_types else 'this product'} formulas DIFFERENT from others
+- Generate REALISTIC formulations with 10-18 ingredients minimum
+- Ensure total percentages add up to exactly 100%
+- Use correct INCI names for all ingredients
+- Include complete preservative system
+- Add appropriate texture modifiers for {formula_types[0] if formula_types else 'the product type'}
+- Consider the specific goals: {', '.join(primary_goals)}
+- Reference realistic suppliers
+- Ensure formulations are manufacturing-feasible
 
-    **MINIMUM INGREDIENT EXPECTATIONS BY PRODUCT TYPE:**
-    - Serums: 10-15 ingredients (water, humectants, actives, preservatives, pH adjusters, penetration enhancers)
-    - Moisturizers/Creams: 12-18 ingredients (emulsion system, multiple emollients, actives, preservatives, texture modifiers)
-    - Cleansers: 8-12 ingredients (surfactants, co-surfactants, conditioning agents, preservatives, pH adjusters)
-    - Masks: 10-16 ingredients (base system, actives, texture modifiers, preservatives)
+**PRODUCT TYPE REQUIREMENTS:**
+{self._get_product_type_requirements(formula_types[0] if formula_types else "serum")}
 
-    Format your response clearly with the numbered sections above. Make it professional yet accessible for the target subscription tier."""
+Format your response clearly with the numbered sections above. Make it professional yet accessible."""
 
         return prompt
+    
+    def _get_category_context(self, product_category: str, formula_type: str) -> str:
+        """Get category-specific context for the prompt"""
+        contexts = {
+            "face_care": "🌟 **FACE CARE CONTEXT:** Focus on gentle, effective ingredients suitable for facial skin. Consider pH balance, penetration, and compatibility with daily skincare routines.",
+            
+            "hair_care": "💇‍♀️ **HAIR CARE CONTEXT:** Focus on scalp health, hair shaft conditioning, and cleansing efficacy. Consider hair type variations and styling needs.",
+            
+            "body_care": "🧴 **BODY CARE CONTEXT:** Focus on larger application areas, longer-lasting effects, and comfort during daily activities. Consider absorption rate and sensory experience.",
+            
+            "pet_care": "🐕 **PET CARE CONTEXT:** CRITICAL - Use only pet-safe ingredients. Avoid: essential oils toxic to pets, xylitol, parabens, sulfates. Focus on gentle cleansing, coat health, and skin soothing. Consider pet behavior during application."
+        }
+        return contexts.get(product_category, "")
+    
+    def _get_goal_specific_requirements(self, goals: List[str], category: str) -> str:
+        """Get specific requirements based on goals and category"""
+        requirements = []
+        
+        goal_ingredients = {
+            # Face care goals
+            "hydrate": "hyaluronic acid, glycerin, ceramides",
+            "anti_aging": "retinol alternatives, peptides, antioxidants",
+            "anti_acne": "salicylic acid, niacinamide, zinc",
+            "soothe": "allantoin, bisabolol, centella asiatica",
+            "brighten": "vitamin C, kojic acid, arbutin",
+            "exfoliate": "AHA/BHA acids, enzymatic exfoliants",
+            
+            # Hair care goals  
+            "nourish": "proteins, amino acids, natural oils",
+            "strengthen": "keratin, biotin, strengthening polymers",
+            "hair_growth": "caffeine, rosemary extract, peptides",
+            "repair": "ceramides, proteins, reconstructive agents",
+            "volume": "volumizing polymers, lightweight oils",
+            "moisture": "humectants, emollients, conditioning agents",
+            
+            # Body care goals
+            "moisturize": "shea butter, ceramides, hyaluronic acid", 
+            "firm": "caffeine, peptides, firming actives",
+            "protect": "antioxidants, UV filters, barrier agents",
+            "cleanse": "gentle surfactants, conditioning agents",
+            
+            # Pet care goals
+            "clean": "mild surfactants, natural cleansers",
+            "soothe_skin": "oatmeal, aloe vera, chamomile",
+            "odor_control": "natural deodorizers, antimicrobials",
+            "coat_shine": "natural oils, conditioning agents",
+            "anti_itch": "colloidal oatmeal, anti-inflammatory agents",
+            "pest_control": "natural repellents (pet-safe only)"
+        }
+        
+        for goal in goals:
+            if goal in goal_ingredients:
+                requirements.append(f"- {goal.replace('_', ' ').title()}: Include {goal_ingredients[goal]}")
+        
+        return "\n   ".join(requirements) if requirements else "- Standard formulation for product type"
+    
+    def _get_product_type_requirements(self, product_type: str) -> str:
+        """Get specific requirements for each product type"""
+        requirements = {
+            # Face Care
+            "serum": "Lightweight, fast-absorbing. High active concentration. Minimal emulsifiers. pH 5.0-6.0.",
+            "cream": "Rich, moisturizing emulsion. 15-30% oil phase. Multiple emollients. pH 5.0-6.5.",
+            "cleanser": "Gentle surfactant system. pH 4.5-5.5. No harsh sulfates for face.",
+            "toner": "Water-based. Alcohol-free preferred. pH balancing. Light actives.",
+            "face_mask": "Higher active concentration. Clay or hydrogel base. 15-20 minute application.",
+            "face_oil": "100% oil phase. Lightweight oils. No water. Essential oil blends.",
+            "eye_cream": "Extra gentle. Smaller molecular actives. Rich but non-comedogenic.",
+            "exfoliant": "AHA/BHA acids. pH 3.5-4.5. Neutralizing system. Weekly use strength.",
+            
+            # Hair Care  
+            "shampoo": "Cleansing surfactant system. pH 4.5-5.5. Conditioning agents. Scalp-friendly.",
+            "conditioner": "Cationic conditioning. pH 4.0-5.0. Detangling properties. No sulfates.",
+            "hair_oil": "Lightweight oils. Scalp penetration. No water phase. Natural extracts.",
+            "hair_mask": "Deep conditioning. High protein content. 5-20 minute treatment.",
+            "leave_in_conditioner": "Light conditioning. Heat protection. Styling benefits.",
+            
+            # Body Care
+            "body_lotion": "Medium viscosity emulsion. Fast absorption. Larger volume application.",
+            "body_butter": "Rich, thick texture. High oil content. Long-lasting moisturization.",
+            "body_scrub": "Physical exfoliants. Oil base preferred. Gentle on large areas.",
+            "shower_gel": "Rich lather. Moisturizing surfactants. pH 5.5-6.5.",
+            "body_oil": "Lightweight oils. Fast absorption. Essential oil blends permitted.",
+            "deodorant": "Antimicrobial actives. Absorption powders. Fragrance system.",
+            
+            # Pet Care
+            "pet_shampoo": "ULTRA MILD surfactants. pH 6.5-7.5. NO harmful ingredients. Tear-free.",
+            "pet_conditioner": "Gentle conditioning. NO silicones. Quick rinse formula.",
+            "pet_balm": "Healing ingredients. Lickable formula. NO toxic components.",
+            "ear_cleaner": "Gentle cleansing. NO alcohol. Antibacterial properties.",
+            "anti_itch_spray": "Soothing actives. NO steroids. Natural anti-inflammatories."
+        }
+        
+        return requirements.get(product_type, "Follow standard cosmetic formulation practices.")
     
     def _parse_questionnaire_response(self, ai_response: str, product_type: str, questionnaire_data: Dict) -> Dict[str, Any]:
         """
         Parse the OpenAI response from questionnaire into structured formula data.
+        Enhanced to extract better product names and descriptions.
         """
         # Initialize formula data
         formula_data = {
@@ -300,23 +427,27 @@ class OpenAIFormulaGenerator:
             "regulatory_notes": ""
         }
         
-        # Parse product name - this is the key improvement
-        if "PRODUCT NAME:" in ai_response:
-            name_sections = ai_response.split("PRODUCT NAME:")
-            if len(name_sections) > 1:
-                name_line = name_sections[1].split("\n")[0].strip()
-                if name_line:
-                    # Clean up the name (remove brackets, extra punctuation)
-                    name_line = name_line.replace("[", "").replace("]", "").strip()
-                    formula_data["name"] = name_line
+        # Parse product name - look for multiple patterns
+        name_patterns = ["PRODUCT NAME:", "**PRODUCT NAME:**", "NAME:", "FORMULA NAME:"]
+        for pattern in name_patterns:
+            if pattern in ai_response:
+                name_sections = ai_response.split(pattern)
+                if len(name_sections) > 1:
+                    name_line = name_sections[1].split("\n")[0].strip()
+                    # Clean up the name
+                    name_line = name_line.replace("**", "").replace("*", "").replace("[", "").replace("]", "").strip()
+                    if name_line and len(name_line) > 3:  # Ensure it's not just punctuation
+                        formula_data["name"] = name_line
+                        break
         
-        # Parse description
-        for header in ["DESCRIPTION:", "PRODUCT DESCRIPTION:"]:
-            if header in ai_response:
-                desc_sections = ai_response.split(header)
+        # Parse description - look for multiple patterns
+        desc_patterns = ["DESCRIPTION:", "**DESCRIPTION:**", "PRODUCT DESCRIPTION:"]
+        for pattern in desc_patterns:
+            if pattern in ai_response:
+                desc_sections = ai_response.split(pattern)
                 if len(desc_sections) > 1:
                     # Find the next section header to stop parsing
-                    next_headers = ["INGREDIENTS:", "TARGET MARKET:", "KEY CLAIMS:", "MANUFACTURING"]
+                    next_headers = ["INGREDIENTS:", "INCI Formula", "FORMULATION:", "WATER PHASE", "1."]
                     next_section = float('inf')
                     for next_header in next_headers:
                         if next_header in desc_sections[1]:
@@ -327,187 +458,141 @@ class OpenAIFormulaGenerator:
                     else:
                         description = desc_sections[1].split("\n\n")[0].strip()
                     
-                    if description:
+                    # Clean up description
+                    description = description.replace("**", "").replace("*", "").strip()
+                    if description and len(description) > 10:
                         formula_data["description"] = description
                         break
         
-        # Parse benefits
-        if "BENEFITS:" in ai_response:
-            benefits_sections = ai_response.split("BENEFITS:")
-            if len(benefits_sections) > 1:
-                next_section = benefits_sections[1].find("\n-")
-                if next_section > 0:
-                    benefits = benefits_sections[1][:next_section].strip()
-                else:
-                    benefits = benefits_sections[1].split("\n\n")[0].strip()
-                if benefits:
-                    formula_data["benefits"] = benefits
-        
-        # Parse usage instructions
-        if "USAGE:" in ai_response:
-            usage_sections = ai_response.split("USAGE:")
-            if len(usage_sections) > 1:
-                next_section = usage_sections[1].find("\n-")
-                if next_section > 0:
-                    usage = usage_sections[1][:next_section].strip()
-                else:
-                    usage = usage_sections[1].split("\n\n")[0].strip()
-                if usage:
-                    formula_data["usage"] = usage
-        
-        # Parse marketing claims for professional users
-        if "KEY CLAIMS:" in ai_response or "MARKETING POSITIONING:" in ai_response:
-            header = "KEY CLAIMS:" if "KEY CLAIMS:" in ai_response else "MARKETING POSITIONING:"
-            claims_sections = ai_response.split(header)
-            if len(claims_sections) > 1:
-                next_section = claims_sections[1].find("\n-")
-                if next_section > 0:
-                    claims = claims_sections[1][:next_section].strip()
-                else:
-                    claims = claims_sections[1].split("\n\n")[0].strip()
-                if claims:
-                    formula_data["marketing_claims"] = claims
-        
-        # Parse MSDS content
-        if "MSDS:" in ai_response:
-            msds_sections = ai_response.split("MSDS:")
-            if len(msds_sections) > 1:
-                next_headers = ["SOP:", "NOTES:", "STABILITY"]
-                next_section = float('inf')
-                for next_header in next_headers:
-                    if next_header in msds_sections[1]:
-                        next_section = min(next_section, msds_sections[1].find(next_header))
+        # If no name found, generate based on type and goals
+        if formula_data["name"] == "AI-Generated Formula":
+            goals = questionnaire_data.get("primary_goals", [])
+            category = questionnaire_data.get("product_category", "")
+            
+            if goals and category:
+                goal_adjectives = {
+                    "hydrate": "Hydrating", "anti_aging": "Youth-Boosting", "anti_acne": "Clarifying",
+                    "soothe": "Calming", "brighten": "Radiance", "nourish": "Nourishing",
+                    "strengthen": "Strengthening", "repair": "Restorative", "clean": "Gentle",
+                    "moisturize": "Moisturizing", "firm": "Firming", "protect": "Protective"
+                }
                 
-                if next_section != float('inf'):
-                    msds_content = msds_sections[1][:next_section].strip()
-                else:
-                    msds_content = msds_sections[1].strip()
+                primary_goal = goals[0] if goals else "nourishing"
+                adjective = goal_adjectives.get(primary_goal, primary_goal.title())
                 
-                formula_data["msds"] = msds_content
+                formula_data["name"] = f"{adjective} {product_type.replace('_', ' ').title()}"
         
-        # Parse SOP content
-        if "SOP:" in ai_response:
-            sop_sections = ai_response.split("SOP:")
-            if len(sop_sections) > 1:
-                next_headers = ["NOTES:", "STABILITY"]
-                next_section = float('inf')
-                for next_header in next_headers:
-                    if next_header in sop_sections[1]:
-                        next_section = min(next_section, sop_sections[1].find(next_header))
-                
-                if next_section != float('inf'):
-                    sop_content = sop_sections[1][:next_section].strip()
-                else:
-                    sop_content = sop_sections[1].strip()
-                
-                formula_data["sop"] = sop_content
-        
-        # Parse ingredients
+        # Parse ingredients (existing logic with error handling)
         ingredient_section = None
-        if "INGREDIENTS:" in ai_response:
-            sections = ai_response.split("INGREDIENTS:")
-            if len(sections) > 1:
-                # Find the next major section
-                next_headers = ["MANUFACTURING", "BENEFITS:", "USAGE:", "MSDS:", "SOP:"]
-                next_section = float('inf')
-                for next_header in next_headers:
-                    if next_header in sections[1]:
-                        next_section = min(next_section, sections[1].find(next_header))
-                
-                if next_section != float('inf'):
-                    ingredient_section = sections[1][:next_section].strip()
-                else:
-                    ingredient_section = sections[1].split("\n\n")[0].strip()
+        ingredient_markers = ["WATER PHASE", "INCI Formula", "INGREDIENTS:", "FORMULATION:"]
+        
+        for marker in ingredient_markers:
+            if marker in ai_response:
+                sections = ai_response.split(marker)
+                if len(sections) > 1:
+                    # Find the next major section
+                    next_headers = ["MANUFACTURING", "BENEFITS:", "USAGE:", "MSDS:", "SOP:", "Formulation Notes"]
+                    next_section = float('inf')
+                    for next_header in next_headers:
+                        if next_header in sections[1]:
+                            next_section = min(next_section, sections[1].find(next_header))
+                    
+                    if next_section != float('inf'):
+                        ingredient_section = sections[1][:next_section].strip()
+                    else:
+                        ingredient_section = sections[1].split("\n\n")[0].strip()
+                    break
         
         if ingredient_section:
-            # Process ingredients
+            # Process ingredients with better parsing
             lines = ingredient_section.split("\n")
             ingredient_order = 1
             
             for line in lines:
                 line = line.strip()
-                if not line or line.startswith("-") or line.startswith("INGREDIENTS"):
+                if not line or line.startswith("-") or line.startswith("**") or len(line) < 5:
                     continue
                 
                 # Try to extract percentage and name
-                # Look for patterns like "5% Niacinamide" or "Niacinamide - 5%"
                 percentage = None
                 ingredient_name = None
                 inci_name = None
                 
-                # Pattern 1: "5% Ingredient Name"
+                # Pattern: "5% Ingredient Name" or "Ingredient Name - 5%"
                 if "%" in line:
-                    parts = line.split("%")
-                    if len(parts) >= 2:
-                        try:
-                            # Extract percentage
-                            percentage_str = parts[0].strip().replace(",", ".")
-                            # Handle cases like "- 5" or "5"
-                            percentage_str = percentage_str.split()[-1]
-                            percentage = float(percentage_str)
-                            
-                            # Extract name
-                            name_part = parts[1].strip()
-                            
-                            # Remove leading dash or bullet if present
-                            if name_part.startswith("-") or name_part.startswith("•"):
-                                name_part = name_part[1:].strip()
-                            
-                            # Extract INCI name from parentheses if available
-                            if "(" in name_part and ")" in name_part:
-                                # Split on first parenthesis
-                                before_paren = name_part.split("(")[0].strip()
-                                inci_match = name_part.split("(")[1].split(")")[0].strip()
-                                
-                                ingredient_name = before_paren if before_paren else inci_match
-                                inci_name = inci_match
-                            else:
-                                ingredient_name = name_part
-                                inci_name = name_part
-                            
-                        except (ValueError, IndexError) as e:
-                            print(f"Error parsing ingredient line: {line}. Error: {str(e)}")
-                            continue
-                
-                # Only proceed if we successfully parsed the ingredient
-                if percentage is not None and ingredient_name:
                     try:
-                        # Create a new ingredient in the database
-                        new_ingredient = models.Ingredient(
-                            name=ingredient_name,
-                            inci_name=inci_name or ingredient_name,
-                            description=f"AI-generated ingredient for {questionnaire_data.get('product_category', 'cosmetic')} product",
-                            phase="AI Generated",
-                            recommended_max_percentage=percentage * 1.2,
-                            function="AI Generated",
-                            is_premium=False,
-                            is_professional=False
-                        )
+                        # Multiple patterns to handle different formats
+                        if " - " in line and "%" in line.split(" - ")[1]:
+                            parts = line.split(" - ")
+                            ingredient_name = parts[0].strip()
+                            percentage_str = parts[1].strip().replace("%", "").replace(",", ".")
+                            percentage = float(percentage_str.split()[0])  # Take first number
+                        elif line.strip().endswith("%"):
+                            # "Ingredient Name 5%"
+                            parts = line.rsplit(" ", 1)
+                            if len(parts) == 2:
+                                ingredient_name = parts[0].strip()
+                                percentage = float(parts[1].replace("%", "").replace(",", "."))
+                        else:
+                            # "5% Ingredient Name"
+                            parts = line.split("%", 1)
+                            if len(parts) >= 2:
+                                percentage_str = parts[0].strip().replace(",", ".")
+                                percentage_str = percentage_str.split()[-1]  # Get last number
+                                percentage = float(percentage_str)
+                                
+                                name_part = parts[1].strip()
+                                # Remove leading dash or bullet
+                                if name_part.startswith("-") or name_part.startswith("•"):
+                                    name_part = name_part[1:].strip()
+                                
+                                # Extract INCI name from parentheses if available
+                                if "(" in name_part and ")" in name_part:
+                                    before_paren = name_part.split("(")[0].strip()
+                                    inci_match = name_part.split("(")[1].split(")")[0].strip()
+                                    ingredient_name = before_paren if before_paren else inci_match
+                                    inci_name = inci_match
+                                else:
+                                    ingredient_name = name_part
+                                    inci_name = name_part
                         
-                        # Add to database
-                        self.db.add(new_ingredient)
-                        self.db.commit()
-                        self.db.refresh(new_ingredient)
-                        
-                        # Add to formula
-                        formula_data["ingredients"].append({
-                            "ingredient_id": new_ingredient.id,
-                            "percentage": percentage,
-                            "order": ingredient_order
-                        })
-                        ingredient_order += 1
-                        
-                    except Exception as e:
-                        print(f"Error creating ingredient {ingredient_name}: {str(e)}")
+                        # Validate parsed data
+                        if percentage is not None and ingredient_name and 0 < percentage <= 100:
+                            # Create ingredient in database
+                            new_ingredient = models.Ingredient(
+                                name=ingredient_name,
+                                inci_name=inci_name or ingredient_name,
+                                description=f"AI-generated ingredient for {questionnaire_data.get('product_category', 'cosmetic')} product",
+                                phase="AI Generated",
+                                recommended_max_percentage=percentage * 1.2,
+                                function="AI Generated",
+                                is_premium=False,
+                                is_professional=False
+                            )
+                            
+                            self.db.add(new_ingredient)
+                            self.db.commit()
+                            self.db.refresh(new_ingredient)
+                            
+                            formula_data["ingredients"].append({
+                                "ingredient_id": new_ingredient.id,
+                                "percentage": percentage,
+                                "order": ingredient_order
+                            })
+                            ingredient_order += 1
+                            
+                    except (ValueError, IndexError) as e:
+                        print(f"Error parsing ingredient line: {line}. Error: {str(e)}")
                         continue
         
-        # Parse manufacturing steps
+        # Parse manufacturing steps (existing logic)
+        steps_patterns = ["MANUFACTURING STEPS:", "MANUFACTURING PROCESS:", "MANUFACTURING:", "PREPARATION:"]
         steps_section = None
-        for header in ["MANUFACTURING STEPS:", "MANUFACTURING PROCESS:", "MANUFACTURING:"]:
-            if header in ai_response:
-                sections = ai_response.split(header)
+        
+        for pattern in steps_patterns:
+            if pattern in ai_response:
+                sections = ai_response.split(pattern)
                 if len(sections) > 1:
-                    # Find the next major section
                     next_headers = ["BENEFITS:", "USAGE:", "MSDS:", "SOP:", "NOTES:", "REGULATORY"]
                     next_section = float('inf')
                     for next_header in next_headers:
@@ -521,7 +606,6 @@ class OpenAIFormulaGenerator:
                     break
         
         if steps_section:
-            # Process steps
             lines = steps_section.split("\n")
             step_order = 1
             current_step = ""
@@ -531,17 +615,17 @@ class OpenAIFormulaGenerator:
                 if not line:
                     continue
                 
-                # Check if line starts with a number or common step indicator
+                # Check if line starts with a number or step indicator
                 if (line[0].isdigit() and ("." in line[:3] or ":" in line[:3])) or line.startswith("Step"):
-                    # Save previous step if exists
+                    # Save previous step
                     if current_step:
                         formula_data["steps"].append({
-                            "description": current_step,
+                            "description": current_step.strip(),
                             "order": step_order
                         })
                         step_order += 1
                     
-                    # Start new step - remove step number/indicator
+                    # Start new step
                     if "." in line:
                         parts = line.split(".", 1)
                     elif ":" in line:
@@ -549,24 +633,27 @@ class OpenAIFormulaGenerator:
                     else:
                         parts = [line]
                     
-                    if len(parts) > 1:
-                        current_step = parts[1].strip()
-                    else:
-                        current_step = line
+                    current_step = parts[1].strip() if len(parts) > 1 else line
                 else:
                     # Continue previous step
                     if current_step:
                         current_step += " " + line
                     else:
-                        # Start new step if we don't have one
                         current_step = line
             
             # Add the last step
             if current_step:
                 formula_data["steps"].append({
-                    "description": current_step,
+                    "description": current_step.strip(),
                     "order": step_order
                 })
+        
+        # Generate default MSDS and SOP if not parsed
+        if not formula_data.get("msds"):
+            formula_data["msds"] = self._generate_default_msds(formula_data["name"])
+        
+        if not formula_data.get("sop"):
+            formula_data["sop"] = self._generate_default_sop(formula_data["name"])
         
         # If no ingredients or steps were parsed, fall back to rule-based generation
         if not formula_data["ingredients"] or not formula_data["steps"]:
@@ -582,13 +669,13 @@ class OpenAIFormulaGenerator:
         try:
             # Map questionnaire goals to skin concerns
             goals_to_concerns = {
-                "hydrate": "dryness",
-                "anti_aging": "aging",
-                "anti_acne": "acne",
-                "soothe": "sensitivity",
-                "brighten": "hyperpigmentation",
-                "balance_oil": "acne",
-                "repair": "aging"
+                "hydrate": "dryness", "anti_aging": "aging", "anti_acne": "acne",
+                "soothe": "sensitivity", "brighten": "hyperpigmentation", 
+                "balance_oil": "acne", "repair": "aging", "nourish": "dryness",
+                "strengthen": "aging", "hair_growth": "aging", "moisturize": "dryness",
+                "firm": "aging", "protect": "sensitivity", "cleanse": "general",
+                "clean": "general", "soothe_skin": "sensitivity", "odor_control": "general",
+                "coat_shine": "general", "anti_itch": "sensitivity", "pest_control": "general"
             }
             
             primary_goals = questionnaire_data.get("primary_goals", [])
@@ -612,15 +699,9 @@ class OpenAIFormulaGenerator:
             
             # Create a descriptive name
             goal_names = {
-                "hydrate": "Hydrating",
-                "anti_aging": "Anti-Aging",
-                "anti_acne": "Acne-Fighting",
-                "soothe": "Soothing",
-                "brighten": "Brightening",
-                "balance_oil": "Oil-Balancing",
-                "repair": "Repairing",
-                "nourish": "Nourishing",
-                "strengthen": "Strengthening"
+                "hydrate": "Hydrating", "anti_aging": "Anti-Aging", "anti_acne": "Acne-Fighting",
+                "soothe": "Soothing", "brighten": "Brightening", "balance_oil": "Oil-Balancing",
+                "repair": "Repairing", "nourish": "Nourishing", "strengthen": "Strengthening"
             }
             
             goal_descriptors = [goal_names.get(goal, goal.title()) for goal in primary_goals[:2]]
