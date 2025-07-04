@@ -16,8 +16,8 @@ router = APIRouter()
 
 # Updated schema for questionnaire-based generation
 class QuestionnaireFormulaRequest(schemas.BaseModel):
-    # Required fields
-    purpose: str  # 'personal' or 'brand'
+    # Optional purpose field - defaults to 'personal' in frontend
+    purpose: Optional[str] = "personal"  # 'personal' or 'brand'
     product_category: str  # 'face_care', 'hair_care', 'body_care', 'pet_care'
     formula_types: List[str]  # ['serum', 'cream', etc.]
     primary_goals: List[str]  # ['hydrate', 'anti_aging', etc.]
@@ -78,10 +78,8 @@ async def generate_formula_from_questionnaire(
     
     # Validate required fields
     if not formula_request.purpose:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Purpose (personal/brand) is required"
-        )
+        # Set default if not provided
+        formula_request.purpose = "personal"
     
     if not formula_request.product_category:
         raise HTTPException(
@@ -108,15 +106,6 @@ async def generate_formula_from_questionnaire(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="At least one primary goal is required"
         )
-    
-    # For brand purpose, validate target user information
-    if formula_request.purpose == 'brand':
-        target_user = formula_request.target_user or {}
-        if not target_user.get('gender') and not target_user.get('ageGroup'):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Target user information is required for brand products"
-            )
     
     # Validate formula types based on category
     category_product_types = {
@@ -239,7 +228,7 @@ async def generate_formula_from_questionnaire(
             "created_at": db_formula.created_at.isoformat() if db_formula.created_at else None,
             "updated_at": db_formula.updated_at.isoformat() if db_formula.updated_at else None,
             "questionnaire_data": {
-                "purpose": formula_request.purpose,
+                "purpose": formula_request.purpose or "personal",
                 "product_category": formula_request.product_category,
                 "formula_types": formula_request.formula_types,
                 "primary_goals": formula_request.primary_goals,

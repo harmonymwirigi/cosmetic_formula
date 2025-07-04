@@ -637,8 +637,8 @@ class FormulaGenerationRequest(BaseModel):
 
 # NEW: Updated schema for questionnaire-based generation - WITH PET CARE
 class QuestionnaireFormulaRequest(BaseModel):
-    # Required fields
-    purpose: str  # 'personal' or 'brand'
+    # Optional purpose field - defaults to 'personal' 
+    purpose: Optional[str] = "personal"  # 'personal' or 'brand'
     product_category: str  # 'face_care', 'hair_care', 'body_care', 'pet_care'
     formula_types: List[str]  # ['serum', 'cream', 'pet_shampoo', etc.]
     primary_goals: List[str]  # ['hydrate', 'anti_aging', 'clean', 'soothe_skin', etc.]
