@@ -41,7 +41,10 @@ class Settings:
     # Environment
     DEBUG: bool = os.getenv("DEBUG", "True").lower() in ('true', '1', 't')
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
-    
+    VONAGE_API_KEY: str = os.getenv("VONAGE_API_KEY", "")
+    VONAGE_API_SECRET: str = os.getenv("VONAGE_API_SECRET", "")
+    VONAGE_SENDER_ID: str = os.getenv("VONAGE_SENDER_ID", "BeautyCraft")  # Your brand name or phone number
+    VONAGE_ENABLED: bool = os.getenv("VONAGE_ENABLED", "false").lower() == "true"
     class Config:
         env_file = ".env"
 

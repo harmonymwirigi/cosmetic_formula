@@ -5,9 +5,21 @@ from app.config import settings
 # Set up logging
 logger = logging.getLogger(__name__)
 
+def _get_vonage_client():
+    """Get initialized Vonage client"""
+    try:
+        from vonage import Auth, Vonage
+        return Vonage(Auth(
+            api_key=settings.VONAGE_API_KEY, 
+            api_secret=settings.VONAGE_API_SECRET
+        ))
+    except Exception as e:
+        logger.error(f"Failed to initialize Vonage client: {str(e)}")
+        return None
+
 def send_verification_code(phone_number, verification_code):
     """
-    Send a verification code SMS to the given phone number.
+    Send a verification code SMS to the given phone number using Vonage.
     
     Args:
         phone_number: The phone number to send the SMS to
@@ -16,23 +28,44 @@ def send_verification_code(phone_number, verification_code):
     Returns:
         str: A message ID if sent, or None if there was an error
     """
-    # For development, just log the verification code
+    # Always log the verification code for debugging
     logger.info(f"SMS to {phone_number}: Your verification code is: {verification_code}")
     
-    # In production with Twilio:
-    if settings.ENVIRONMENT == "production" and hasattr(settings, "TWILIO_ENABLED") and settings.TWILIO_ENABLED:
+    # Check if Vonage is enabled and configured
+    if hasattr(settings, "VONAGE_ENABLED") and settings.VONAGE_ENABLED:
         try:
-            from twilio.rest import Client
-            client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-            message = client.messages.create(
-                body=f"Your verification code for Cosmetic Formula Lab is: {verification_code}",
-                from_=settings.TWILIO_PHONE_NUMBER,
-                to=phone_number
+            from vonage_sms import SmsMessage, SmsResponse
+            
+            # Initialize Vonage client
+            client = _get_vonage_client()
+            if not client:
+                logger.error("Failed to initialize Vonage client")
+                return None
+            
+            # Create and send message
+            message = SmsMessage(
+                to=phone_number,
+                from_=settings.VONAGE_SENDER_ID,
+                text=f"Your verification code for Cosmetic Formula Lab is: {verification_code}"
             )
-            logger.info(f"SMS sent successfully with ID: {message.sid}")
-            return message.sid
+            
+            response: SmsResponse = client.sms.send(message)
+            
+            # Check if message was sent successfully
+            if response.messages and len(response.messages) > 0:
+                message_status = response.messages[0]
+                if message_status.status == "0":  # 0 means success in Vonage
+                    logger.info(f"SMS sent successfully with ID: {message_status.message_id}")
+                    return message_status.message_id
+                else:
+                    logger.error(f"Vonage SMS error: {message_status.error_text}")
+                    return None
+            else:
+                logger.error("Vonage SMS error: No response messages")
+                return None
+                
         except Exception as e:
-            logger.error(f"Twilio SMS error: {str(e)}")
+            logger.error(f"Vonage SMS error: {str(e)}")
             return None
     return "dev-mode-no-sms-sent"
 
@@ -41,9 +74,10 @@ def send_verification_sms(phone_number, verification_code):
     Alias for send_verification_code for backward compatibility
     """
     return send_verification_code(phone_number, verification_code)
+
 def send_formula_limit_sms(phone_number, formula_count, formula_limit, subscription_type):
     """
-    Send an SMS notification about reaching the formula limit.
+    Send an SMS notification about reaching the formula limit using Vonage.
     
     Args:
         phone_number: The phone number to send the SMS to
@@ -74,27 +108,48 @@ def send_formula_limit_sms(phone_number, formula_count, formula_limit, subscript
     
     logger.info(f"Formula limit SMS to {phone_number}: {message}")
     
-    # In production with Twilio:
-    if settings.ENVIRONMENT == "production" and hasattr(settings, "TWILIO_ENABLED") and settings.TWILIO_ENABLED:
+    # Check if Vonage is enabled and configured
+    if hasattr(settings, "VONAGE_ENABLED") and settings.VONAGE_ENABLED:
         try:
-            from twilio.rest import Client
-            client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-            sms = client.messages.create(
-                body=message,
-                from_=settings.TWILIO_PHONE_NUMBER,
-                to=phone_number
+            from vonage_sms import SmsMessage, SmsResponse
+            
+            # Initialize Vonage client
+            client = _get_vonage_client()
+            if not client:
+                logger.error("Failed to initialize Vonage client")
+                return None
+            
+            # Create and send message
+            sms_message = SmsMessage(
+                to=phone_number,
+                from_=settings.VONAGE_SENDER_ID,
+                text=message
             )
-            logger.info(f"Formula limit SMS sent successfully with ID: {sms.sid}")
-            return sms.sid
+            
+            response: SmsResponse = client.sms.send(sms_message)
+            
+            # Check if message was sent successfully
+            if response.messages and len(response.messages) > 0:
+                message_status = response.messages[0]
+                if message_status.status == "0":  # 0 means success in Vonage
+                    logger.info(f"Formula limit SMS sent successfully with ID: {message_status.message_id}")
+                    return message_status.message_id
+                else:
+                    logger.error(f"Vonage SMS error for formula limit notification: {message_status.error_text}")
+                    return None
+            else:
+                logger.error("Vonage SMS error: No response messages")
+                return None
+                
         except Exception as e:
-            logger.error(f"Twilio SMS error for formula limit notification: {str(e)}")
+            logger.error(f"Vonage SMS error for formula limit notification: {str(e)}")
             return None
     
     return "dev-mode-no-sms-sent"
 
 def send_subscription_change_sms(phone_number, old_plan, new_plan, expires_at=None):
     """
-    Send an SMS notification about a subscription change.
+    Send an SMS notification about a subscription change using Vonage.
     
     Args:
         phone_number: The phone number to send the SMS to
@@ -150,20 +205,41 @@ def send_subscription_change_sms(phone_number, old_plan, new_plan, expires_at=No
     
     logger.info(f"Subscription change SMS to {phone_number}: {message}")
     
-    # In production with Twilio:
-    if settings.ENVIRONMENT == "production" and hasattr(settings, "TWILIO_ENABLED") and settings.TWILIO_ENABLED:
+    # Check if Vonage is enabled and configured
+    if hasattr(settings, "VONAGE_ENABLED") and settings.VONAGE_ENABLED:
         try:
-            from twilio.rest import Client
-            client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
-            sms = client.messages.create(
-                body=message,
-                from_=settings.TWILIO_PHONE_NUMBER,
-                to=phone_number
+            from vonage_sms import SmsMessage, SmsResponse
+            
+            # Initialize Vonage client
+            client = _get_vonage_client()
+            if not client:
+                logger.error("Failed to initialize Vonage client")
+                return None
+            
+            # Create and send message
+            sms_message = SmsMessage(
+                to=phone_number,
+                from_=settings.VONAGE_SENDER_ID,
+                text=message
             )
-            logger.info(f"Subscription change SMS sent successfully with ID: {sms.sid}")
-            return sms.sid
+            
+            response: SmsResponse = client.sms.send(sms_message)
+            
+            # Check if message was sent successfully
+            if response.messages and len(response.messages) > 0:
+                message_status = response.messages[0]
+                if message_status.status == "0":  # 0 means success in Vonage
+                    logger.info(f"Subscription change SMS sent successfully with ID: {message_status.message_id}")
+                    return message_status.message_id
+                else:
+                    logger.error(f"Vonage SMS error for subscription change notification: {message_status.error_text}")
+                    return None
+            else:
+                logger.error("Vonage SMS error: No response messages")
+                return None
+                
         except Exception as e:
-            logger.error(f"Twilio SMS error for subscription change notification: {str(e)}")
+            logger.error(f"Vonage SMS error for subscription change notification: {str(e)}")
             return None
     
     return "dev-mode-no-sms-sent"
